@@ -4,6 +4,8 @@
 
 <p align="center">A quiet, Diátaxis-aware documentation theme for <a href="https://zensical.org">Zensical</a>.</p>
 
+<p align="center"><strong><a href="https://axelvoitier.github.io/zensical-tarn/">Read the docs and try Tarn</a></strong><br>The documentation site uses Tarn itself.</p>
+
 ![A how-to guide rendered with Tarn in light mode](screenshots/site/site-howto-light.png)
 
 Tarn combines calm colours, legible type and Diátaxis navigation in a restrained layout for documentation.
