@@ -78,8 +78,7 @@ This requires Playwright, Chromium, and internet access for the configured
 Google fonts. It refreshes `screenshots/site/`, `screenshots/components/`, and
 the screenshots embedded in `docs/assets/screenshots/`. Use `--executable`
 to select an existing Chromium installation. Rebuild the documentation and
-source archive afterwards to include the refreshed images. Original design
-preview cards and logo exports have no regeneration sources in this repository.
+source archive afterwards to include the refreshed images. Logo exports are maintained separately from the documentation screenshots.
 
 ## Upstream template overrides
 

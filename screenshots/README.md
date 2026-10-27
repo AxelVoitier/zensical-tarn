@@ -13,4 +13,3 @@ results in `docs/assets/screenshots/`. To refresh only those two images, run
 | --- | --- |
 | `site/` | Full pages, light and dark: home, a tutorial, a how-to, reference, explanation, a secondary section (About), the components page (full length), and the same how-to with sidebar navigation instead of tabs. |
 | `components/` | Page elements cropped from the build: header and tabs, sidebar navigation, admonitions, code block, content tabs, table, buttons, Diátaxis badges, inline code / keys / highlight. |
-| `design-previews/` | Original design-system exports, including the cover and logo construction. Their HTML sources are not included, so the capture script does not regenerate them; they may differ from the current tokens. |

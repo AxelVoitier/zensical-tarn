@@ -11,7 +11,7 @@
 Tarn combines calm colours, legible type and Diátaxis navigation in a restrained layout for documentation.
 
 - **Diátaxis navigation cues.** Recognised sections get coloured dots on navigation tabs or sidebar headings. Recognised page URLs receive a Tutorial, How-to guide, Reference or Explanation badge by default. You can override individual badges or disable badges and navigation decoration separately. Unrecognised sections use quieter, secondary styling by default.
-- **Light and dark** palettes follow the reader's system preference by default, unless the reader saves a choice. Projects can choose their starting mode.
+- **Light and dark** palettes draw on the same mountain lake by day and night: warm cloud-grey and starlit indigo. In dark mode, you read cool off-white text against a deep blue-violet sky. The palettes follow the reader's system preference by default, unless the reader saves a choice. Projects can choose their starting mode.
 - **Legible type**: Atkinson Hyperlegible Next and Mono.
 - **Flat and focused**: a neutral header, thin dividing lines, five admonition tones for Zensical's twelve types, and inline code that stands out from prose and links.
 - **Tabs or sidebar**: works with `navigation.tabs` (default) or `navigation.sections`.

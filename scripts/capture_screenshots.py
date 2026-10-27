@@ -19,8 +19,7 @@
 
 """Rebuild the documentation screenshots with the installed theme and configured fonts.
 
-Requires Playwright, Chromium, and network access to Google Fonts. The exported
-design-preview cards have no HTML sources here and are not regenerated.
+Requires Playwright, Chromium, and network access to Google Fonts.
 """
 
 import argparse

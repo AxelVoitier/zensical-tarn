@@ -27,7 +27,7 @@ Tarn is a documentation theme for [Zensical](https://zensical.org), with calm co
 
 - Diátaxis navigation cues. Tarn enables tabs by default and colours recognised documentation sections. Your Zensical configuration determines the sections and their order.
 - Optional page badges. Recognised page URLs receive a Tutorial, How-to guide, Reference or Explanation badge by default. You can override individual badges or disable them.
-- Light and dark palettes. The packaged defaults follow the reader's system preference unless the reader saves a choice. This documentation site starts in light mode.
+- Light and dark palettes. A warm cloud-grey page by day and starlit indigo by night keep you beside the same mountain lake. The packaged defaults follow the reader's system preference unless the reader saves a choice. This documentation site starts in light mode.
 - Legible type. Atkinson Hyperlegible Next and Atkinson Hyperlegible Mono distinguish characters such as `l`, `1`, `I`, `0` and `O`.
 - Flat styling. A neutral header, thin dividing lines and five admonition tones keep the visual emphasis on the content.
 

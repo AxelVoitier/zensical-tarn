@@ -107,7 +107,7 @@ def main() -> None:
                                 require(
                                     background
                                     == (
-                                        'rgb(14, 20, 29)'
+                                        'rgb(20, 26, 54)'
                                         if scheme == 'dark'
                                         else 'rgb(234, 229, 223)'
                                     ),

@@ -297,9 +297,9 @@ EXTRA = f"""/* Tarn theme for Zensical (zensical-tarn) — GENERATED from design
 {zvars(0)}
 }}
 
-/* Dark: scheme "slate" (ink-blue night) */
+/* Dark: scheme "slate" (starlit indigo) */
 [data-md-color-scheme="slate"] {{
-  --md-hue: 215;
+  --md-hue: 268;
 {zvars(1)}
   color-scheme: dark;
 }}
@@ -360,7 +360,7 @@ body:not([data-md-color-accent]), [data-md-color-accent="custom"] {{
   border-bottom: 1px solid var(--tarn-line); font-size: .65rem; }}
 .md-typeset .highlight .c, .md-typeset .highlight .c1, .md-typeset .highlight .cm {{ font-style: italic; }}
 .md-typeset .linenos, .md-typeset .linenodiv a, .md-typeset .highlight .linenos a {{ color: var(--md-default-fg-color--lighter); text-decoration: none; }}
-/* Inline code: its own plum ink on a darker chip, so names stand out from prose and from links */
+/* Inline code: plum in light mode, lavender-silver in dark, on a distinct background chip */
 .md-typeset :not(pre, .highlight) > code {{ color: var(--tarn-inline-ink); background-color: var(--tarn-inline-bg);
   border-radius: 4px; padding: .12em .38em; font-weight: 500; }}
 .md-typeset a > code, .md-typeset a:hover > code {{ color: inherit; }}
