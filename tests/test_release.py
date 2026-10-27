@@ -7,16 +7,19 @@
 # ruff: noqa: S603, S607
 """Regression checks for the tag and artifact boundaries of a release."""
 
+import io
 import subprocess
 import sys
+import tarfile
 import unittest
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
-from check_release import git, verify_tag
+from check_release import git, inspect_archives, verify_tag
 from prepare_release import artifact_hashes, check_toolchain, prepare
 
 
@@ -89,6 +92,80 @@ class ReleaseTagChecks(unittest.TestCase):
 
 
 class ReleaseArtifactChecks(unittest.TestCase):
+    def test_archive_checks_allow_branch_builds_and_retain_tag_provenance(self) -> None:
+        """Inspect untagged CI archives without resolving a nonexistent release tag."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'pyproject.toml').write_text(
+                '[project]\nname = "theme"\nrequires-python = ">=3.11"\n'
+                'license = "MIT"\nlicense-files = ["LICENSE", "NOTICE", "LICENSES/*.txt"]\n'
+                'dependencies = []\nauthors = [{name = "Maintainer"}]\n'
+                '[project.urls]\nSource = "https://example.invalid/theme"\n',
+                encoding='utf-8',
+            )
+            (root / 'README.md').write_text('', encoding='utf-8')
+            licences = {
+                'LICENSE': b'Licence',
+                'NOTICE': b'Notice',
+                'LICENSES/zensical-ui.MIT.txt': b'Upstream licence',
+            }
+            theme = root / 'src/zensical_tarn'
+            theme.mkdir(parents=True)
+            assets: dict[str, bytes] = {}
+            for name, target in (
+                ('LICENSE', 'LICENSE.txt'),
+                ('NOTICE', 'NOTICE.txt'),
+                ('LICENSES/zensical-ui.MIT.txt', 'zensical-ui.MIT.txt'),
+            ):
+                path = root / name
+                path.parent.mkdir(exist_ok=True)
+                path.write_bytes(licences[name])
+                assets[f'zensical_tarn/assets/licenses/tarn/{target}'] = licences[name]
+            metadata = (
+                b'Metadata-Version: 2.4\nName: theme\nVersion: 1.0.0\n'
+                b'Requires-Python: >=3.11\nLicense-Expression: MIT\n'
+                b'Description-Content-Type: text/markdown\nAuthor: Maintainer\n'
+                b'Project-URL: Source, https://example.invalid/theme\n\n'
+            )
+            info = 'theme-1.0.0.dist-info'
+            with zipfile.ZipFile(root / 'theme.whl', 'w') as wheel:
+                for name, data in assets.items():
+                    wheel.writestr(name, data)
+                wheel.writestr(f'{info}/METADATA', metadata)
+                for name, data in licences.items():
+                    wheel.writestr(f'{info}/licenses/{name}', data)
+                wheel.writestr(
+                    f'{info}/entry_points.txt',
+                    '[mkdocs.themes]\ntarn = zensical_tarn\n',
+                )
+            with tarfile.open(root / 'theme.tar.gz', 'w:gz') as source:
+                for name, data in {
+                    'PKG-INFO': metadata,
+                    **licences,
+                    **{f'src/{name}': data for name, data in assets.items()},
+                }.items():
+                    member = tarfile.TarInfo(f'theme-1.0.0/{name}')
+                    member.size = len(data)
+                    source.addfile(member, io.BytesIO(data))
+            for tag in (None, 'v1.0.0'):
+                provenance = {'tag_object': 'verified-tag-object'}
+                with (
+                    self.subTest(tag=tag),
+                    patch('check_release.source_version', return_value='1.0.0'),
+                    patch('check_release.verify_tag', return_value=provenance) as verify,
+                    patch('check_release.git', side_effect=AssertionError('Unexpected Git query')),
+                ):
+                    result = inspect_archives(root, root, tag)
+                    self.assertEqual(result['git'], provenance if tag else None)
+                    self.assertEqual(
+                        result['tag_object'],
+                        provenance['tag_object'] if tag else None,
+                    )
+                    if tag:
+                        verify.assert_called_once_with(root, tag, '1.0.0')
+                    else:
+                        verify.assert_not_called()
+
     def test_release_check_requires_an_explicit_tag(self) -> None:
         """Keep the Hatch release check from approving untagged archives."""
         result = subprocess.run(
