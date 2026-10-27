@@ -305,7 +305,8 @@ Do not change unrelated choices during an engine update. Current decisions are:
 - The own-site tutorial uses linked OS tabs. It does not use code annotations.
 - Fonts come from Google Fonts, with documented self-hosting.
 - Original Tarn material is Apache 2.0; copied MIT material retains its notices.
-- GitHub workflows have no PR triggers or publication/deployment steps.
+- GitHub workflows have no PR triggers or package publication steps. The
+  documentation workflow deploys the main site to GitHub Pages from `main`.
 
 An upstream release adding a feature does not justify enabling it in Tarn.
 
