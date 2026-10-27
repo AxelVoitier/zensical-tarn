@@ -1,0 +1,11 @@
+/* Styles for this documentation site only (not part of the theme). */
+.md-typeset img[src*="screenshots/"] { border: 1px solid var(--tarn-line); border-radius: 10px; }
+/* Keep option names intact; table containers can scroll on narrow screens. */
+.md-typeset table code { white-space: nowrap; word-break: normal; }
+.tarn-theme-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.tarn-theme-previews figure { display: block; min-width: 0; margin: 0; padding: 0; }
+.tarn-theme-previews figcaption { margin-bottom: .4rem; font-size: .75rem; text-align: center; }
+.tarn-theme-previews img { display: block; width: 100%; }
+@media screen and (max-width: 44.984375em) {
+  .tarn-theme-previews { grid-template-columns: minmax(0, 1fr); }
+}

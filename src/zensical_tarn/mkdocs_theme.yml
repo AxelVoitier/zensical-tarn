@@ -1,0 +1,42 @@
+# Tarn theme defaults. Merged into the project's `theme` configuration;
+# anything set in the project's zensical.toml / mkdocs.yml wins.
+extends: material
+
+font:
+  text: Atkinson Hyperlegible Next
+  code: Atkinson Hyperlegible Mono
+
+features:
+  - navigation.tabs  # Top-level nav as tabs in header
+  - navigation.indexes  # Intermediate section levels can have their own pages
+
+palette:
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: custom
+    accent: custom
+    toggle:
+      icon: lucide/moon
+      name: Switch to dark mode
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: custom
+    accent: custom
+    toggle:
+      icon: lucide/sun
+      name: Switch to light mode
+
+icon:
+  admonition:
+    note: lucide/info
+    abstract: lucide/list
+    info: lucide/info
+    tip: lucide/lightbulb
+    success: lucide/check
+    question: lucide/circle-help
+    warning: lucide/triangle-alert
+    failure: lucide/x
+    danger: lucide/zap
+    bug: lucide/bug
+    example: lucide/flask-conical
+    quote: lucide/quote

@@ -1,0 +1,58 @@
+# Documentation site for zensical-tarn, built with the theme itself.
+[project]
+site_name = "Tarn"
+site_description = "A quiet, Diátaxis-aware documentation theme for Zensical"
+site_url = "https://axelvoitier.github.io/zensical-tarn/"
+repo_url = "https://github.com/AxelVoitier/zensical-tarn"
+docs_dir = "docs"
+extra_css = ["stylesheets/docs.css"]
+nav = [
+  {"Home" = "index.md"},
+  {"Tutorials" = ["tutorials/index.md", "tutorials/first-site.md"]},
+  {"How-to guides" = ["how-to/index.md", "how-to/name-sections.md", "how-to/set-page-type.md", "how-to/add-project-logo.md", "how-to/adjust-colours.md", "how-to/set-default-colour-mode.md", "how-to/self-host-fonts.md", "how-to/use-sidebar-navigation.md"]},
+  {"Reference" = ["reference/index.md", "reference/configuration.md", "reference/section-folders.md", "reference/components.md", "reference/css-properties.md"]},
+  {"Explanation" = ["explanation/index.md", "explanation/design-principles.md", "explanation/diataxis-navigation.md", "explanation/colour.md"]},
+  {"About" = ["about/index.md"]},
+  {"Contributing" = ["contributing/index.md"]},
+]
+
+[project.theme]
+name = "tarn"
+logo = "assets/logo.svg"
+favicon = "assets/favicon.svg"
+# Keep the theme's navigation defaults and add this site's convenience features.
+# Site feature lists replace the complete theme list.
+features = [
+  "navigation.tabs",  # Top-level nav as tabs in header
+  "navigation.indexes",  # Intermediate section levels can have their own pages
+  # Added features from defaults
+  "navigation.instant",  # No reload between pages, use XHR
+  "navigation.instant.prefetch",  # Preload links on hover
+  "navigation.instant.progress",  # Show progress on slow page loads
+  "navigation.footer",  # Prev/Next links at the bottom
+  "navigation.top",  # Back-to-top button.
+  "toc.follow",  # TOC sidebar follows scroll
+  "search.highlight",  # Highlight search results in the page
+  "search.suggest",  # Suggest search completion
+  "content.code.copy",  # Copy button in code blocks
+  "content.tabs.link",  # Keep matching content tabs in sync
+  "content.tooltips",  # Better looking tooltips
+]
+
+# This documentation site starts light; the packaged theme still follows the system.
+[[project.theme.palette]]
+scheme = "default"
+primary = "custom"
+accent = "custom"
+toggle = { icon = "lucide/moon", name = "Switch to dark mode" }
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "custom"
+accent = "custom"
+toggle = { icon = "lucide/sun", name = "Switch to light mode" }
+
+# Zensical 0.0.73 otherwise copies these package internals into generated sites.
+# This is a site setting, so the installed theme cannot supply it as a default.
+[project.plugins.exclude]
+glob = ["__init__.py", "__pycache__/*", "mkdocs_theme.yml"]

@@ -1,0 +1,50 @@
+{#- Tarn settings and section classification. Shared by badges, tabs and sidebar. -#}
+{% set settings = config.extra.tarn | default({}) %}
+{% set labels = {"tutorial": "Tutorial", "howto": "How-to guide", "reference": "Reference", "explanation": "Explanation"} %}
+{% set sections = {
+  "tutorials": "tutorial", "tutorial": "tutorial",
+  "how-to": "howto", "how-tos": "howto", "howto": "howto", "howtos": "howto", "how-to-guides": "howto", "guides": "howto",
+  "reference": "reference", "references": "reference", "api": "reference",
+  "explanation": "explanation", "explanations": "explanation", "concepts": "explanation",
+  "": "primary", "index": "primary",
+  "about": "secondary", "contributing": "secondary", "changelog": "secondary"
+} %}
+
+{% macro credit() -%}
+  {%- if settings.credit | default(true) -%}
+    and the <a href="{{ settings.credit_url | default('https://axelvoitier.github.io/zensical-tarn/', true) | e }}">Tarn</a> theme
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro section_type(url) -%}
+  {%- set segment = url | split("/") | first -%}
+  {%- if segment is endingwith(".html") -%}{%- set segment = segment[:-5] -%}{%- endif -%}
+  {%- set overrides = settings.sections | default({}) -%}
+  {%- set type = overrides[segment] if segment in overrides else sections[segment] | default("secondary") -%}
+  {{- type if type in labels or type in ["primary", "secondary"] else "primary" -}}
+{%- endmacro %}
+
+{% macro navigation_attributes(item) -%}
+  {%- if item.children -%}
+    {{- navigation_attributes(item.children | first) -}}
+  {%- elif item.url is defined -%}
+    data-tarn-url="{{ item.url | e }}"
+    {%- if settings.enabled | default(true) and settings.navigation | default(true) %}
+      data-tarn-type="{{ 'secondary' if item.is_link else section_type(item.url) }}"
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro badge(page) -%}
+  {%- if page and settings.enabled | default(true) and settings.badges | default(true) -%}
+    {%- if page.meta.tarn and page.meta.tarn.type is defined -%}
+      {%- set type = page.meta.tarn.type -%}
+    {%- else -%}
+      {%- set type = section_type(page.url) -%}
+    {%- endif -%}
+    {%- if type in labels -%}
+      {%- set overrides = settings.labels | default({}) -%}
+      <span class="tarn-dtx tarn-dtx--{{ type }}">{{ overrides[type] | default(labels[type]) | e }}</span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}

@@ -1,0 +1,88 @@
+name: Package checks
+
+on:
+  # PRs and contributor branches never start checks automatically. Review first.
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/check.yml'
+      - '.github/workflows/release-preparation.yml'
+      - '.gitignore'
+      - 'pyproject.toml'
+      - 'release-review.toml'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'LICENSE'
+      - 'LICENSES/**'
+      - 'NOTICE'
+      - 'src/**'
+      - 'design/**'
+      - 'examples/**'
+      - 'screenshots/**'
+      - 'scripts/**'
+      - 'tests/**'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A caller has its own workflow name: keep its checks separate from push runs
+  # and from the caller's outer concurrency group to avoid self-cancellation.
+  group: package-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install build twine
+      - run: python scripts/build_css.py --check
+      - run: python -m unittest discover -s tests -v
+      # The default build creates an sdist, then builds the wheel from that archive.
+      - run: python -m build
+      - run: python -m twine check --strict dist/*
+      - run: python scripts/check_release.py --strict --report release-report.json
+      - run: python -m pip install dist/*.whl
+      - run: python scripts/check_package.py
+      - run: python scripts/check_config.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: matrix.python == '3.12'
+        with:
+          name: dist
+          path: dist/*
+          if-no-files-found: error
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build playwright
+      - run: python -m build --wheel
+      - run: python -m pip install dist/*.whl
+      - run: python -m playwright install --with-deps chromium
+      - run: python scripts/check_browser.py --artifacts browser-artifacts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-artifacts
+          path: browser-artifacts/
+          retention-days: 7

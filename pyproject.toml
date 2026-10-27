@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "zensical-tarn"
+dynamic = ["version"]
+description = "Tarn: a quiet, Diátaxis-aware documentation theme for Zensical"
+readme = "README.md"
+license = "Apache-2.0 AND MIT"
+license-files = ["LICENSE", "NOTICE", "LICENSES/*.txt"]
+requires-python = ">=3.11"
+authors = [{ name = "Axel Voitier" }]
+keywords = ["zensical", "theme", "documentation", "diataxis", "mkdocs"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: MkDocs",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Documentation",
+  "Topic :: Software Development :: Documentation",
+]
+# Navigation partials are checked against this release. Widen after verification.
+dependencies = ["zensical==0.0.73"]
+
+[project.urls]
+Homepage = "https://github.com/AxelVoitier/zensical-tarn"
+Documentation = "https://axelvoitier.github.io/zensical-tarn/"
+Issues = "https://github.com/AxelVoitier/zensical-tarn/issues"
+Changelog = "https://github.com/AxelVoitier/zensical-tarn/blob/main/CHANGELOG.md"
+
+# Zensical discovers installed themes through this entry point group.
+# Users select the theme with  name = "tarn".
+[project.entry-points."mkdocs.themes"]
+tarn = "zensical_tarn"
+
+[tool.hatch.version]
+path = "src/zensical_tarn/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zensical_tarn"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "docs", "design", "screenshots", "scripts", "tests", "examples", "README.md", "CHANGELOG.md", "LICENSE", "LICENSES", "NOTICE", "Makefile", "RELEASING.md", "UPGRADING_ZENSICAL.md", "AGENTS.md", "pyrightconfig.json", "release-review.toml", "zensical.toml"]

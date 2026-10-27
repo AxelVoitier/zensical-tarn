@@ -1,0 +1,25 @@
+Tarn
+Copyright 2026 Axel Voitier
+
+Original Tarn code, documentation and design assets are licensed under the
+Apache License, Version 2.0. The following third-party material retains its
+own licence.
+
+zensical-tarn includes modified copies of three templates from Zensical:
+
+  src/zensical_tarn/partials/tabs-item.html
+  src/zensical_tarn/partials/nav-item.html
+  src/zensical_tarn/partials/copyright.html
+  Copied from Zensical's UI (https://github.com/zensical/ui, tag v0.0.39,
+  dist/partials/), with Tarn navigation attributes and a footer credit.
+  Zensical is distributed under the MIT License,
+  Copyright (c) 2025-2026 Zensical and contributors;
+  that notice and licence apply to those files.
+  The complete upstream licence is included in LICENSES/zensical-ui.MIT.txt,
+  copied verbatim from https://github.com/zensical/ui/blob/v0.0.39/LICENSE.
+
+Fonts are not bundled. Atkinson Hyperlegible Next and Atkinson Hyperlegible Mono
+are loaded from Google Fonts under the SIL Open Font License 1.1.
+Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors
+Copyright 2020-2024 The Atkinson Hyperlegible Mono Project Authors
+Their copyright notices and licences must accompany self-hosted font files.

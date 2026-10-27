@@ -1,0 +1,16 @@
+# Smallest useful Tarn site. Run:  pip install zensical-tarn && zensical serve
+[project]
+site_name = "Example project"
+nav = [
+  {"Home" = "index.md"},
+  {"Tutorials" = ["tutorials/index.md"]},
+  {"How-to guides" = ["how-to/index.md"]},
+  {"Reference" = ["reference/index.md"]},
+  {"Explanation" = ["explanation/index.md"]},
+  {"About" = ["about/index.md"]},
+]
+
+[project.theme]
+name = "tarn"
+logo = "assets/logo.svg"
+favicon = "assets/logo.svg"

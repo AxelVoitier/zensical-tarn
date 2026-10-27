@@ -1,0 +1,7 @@
+# Record decisions once agreed with the project owner. These flags do not
+# authorise publication; all publishing remains outside this preparation batch.
+[review]
+licence = true
+ownership = true
+branding = true
+fonts = true

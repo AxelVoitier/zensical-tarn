@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+/site/
+/site-*/
+/examples/minimal-site/site/
+.venv/
+.cache/
+browser-artifacts/
+/release-report*.json
