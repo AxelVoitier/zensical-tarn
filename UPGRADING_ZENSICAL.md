@@ -55,7 +55,8 @@ python3 --version
 python3 -m venv "$TARN_UPGRADE_ROOT/venv"
 TARN_PYTHON="$TARN_UPGRADE_ROOT/venv/bin/python"
 export TARN_TARGET_VERSION TARN_SOURCE_ROOT TARN_UPGRADE_ROOT TARN_PYTHON
-"$TARN_PYTHON" -m pip install build twine playwright
+"$TARN_PYTHON" -m pip install "pip>=25.1"
+"$TARN_PYTHON" -m pip install --group release playwright
 ~~~
 
 If `python3` is incompatible, select a suitable installed interpreter when
@@ -522,9 +523,11 @@ artifact sizes and SHA-256 hashes. `publication_performed` must remain false,
 and strict preflight must report no artifact errors or release blockers.
 
 A normal dependency update does not require a proposed release tag. If checking
-one is useful, pass `--tag` with Tarn's current version, not the Zensical version.
-Read Tarn's version from `src/zensical_tarn/__init__.py`; do not assume `0.1.0`
-forever. The flag checks a string and creates no tag.
+one is useful, pass `--tag` with Tarn's existing version tag, not the Zensical version.
+Read Tarn's version with `hatch version` or `python -m hatchling version`; Git
+tags determine it. Do not infer it from the runtime `__version__` assignment.
+If supplied, the flag requires that existing tag at a clean HEAD and records
+its commit and tree. It creates no tag. Normal untagged upgrade checks omit it.
 
 Inspect archive paths when packaging rules change. Confirm that maintainer
 instructions and all referenced assets are included, licence copies match, and

@@ -1,4 +1,4 @@
-<p align="center"><img src="design/logo/tarn-logo-512.png" width="72" alt="Tarn logo"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/design/logo/tarn-logo-512.png" width="72" alt="Tarn logo"></p>
 
 <h1 align="center">Tarn</h1>
 
@@ -6,7 +6,7 @@
 
 <p align="center"><strong><a href="https://axelvoitier.github.io/zensical-tarn/">Read the docs and try Tarn</a></strong><br>The documentation site uses Tarn itself.</p>
 
-![A how-to guide rendered with Tarn in light mode](screenshots/site/site-howto-light.png)
+![A how-to guide rendered with Tarn in light mode](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/site/site-howto-light.png)
 
 Tarn combines calm colours, legible type and Diátaxis navigation in a restrained layout for documentation.
 
@@ -19,18 +19,16 @@ Tarn combines calm colours, legible type and Diátaxis navigation in a restraine
 
 ## Install
 
-Tarn is being prepared for its first release. It requires Python 3.11 or newer
-and pins Zensical to version 0.0.73. See the
-[configuration reference](docs/reference/configuration.md) for dependency details.
+Tarn requires Python 3.11 or newer and pins Zensical to version 0.0.73.
+See the [configuration reference](https://axelvoitier.github.io/zensical-tarn/reference/configuration/) for dependency details.
 
-With an active virtual environment, install from the source checkout's root:
+With an active virtual environment, install [Tarn from PyPI](https://pypi.org/project/zensical-tarn/):
 
 ```bash
-python -m pip install .
+python -m pip install zensical-tarn
 ```
 
-This also installs Zensical. After publication,
-`python -m pip install zensical-tarn` will install the published package from PyPI.
+This also installs Zensical.
 Select the theme in your project's configuration:
 
 ```toml
@@ -52,23 +50,23 @@ Folders such as `tutorials/`, `how-to/`, `reference/` and `explanation/` have
 built-in classifications. The homepage defaults to primary styling. Unknown
 URL sections default to secondary styling. Use `project.extra.tarn.sections`
 to map existing folders or mark a section as primary. The
-[first-site tutorial](docs/tutorials/first-site.md) covers a working site, and
-[Name your sections](docs/how-to/name-sections.md) explains custom mappings.
+[first-site tutorial](https://axelvoitier.github.io/zensical-tarn/tutorials/first-site/) covers a working site, and
+[Name your sections](https://axelvoitier.github.io/zensical-tarn/how-to/name-sections/) explains custom mappings.
 
-You can [add your own logo](docs/how-to/add-project-logo.md),
-[adjust colours](docs/how-to/adjust-colours.md) and change the fonts through
-[Zensical configuration](docs/reference/configuration.md#fonts-and-css).
+You can [add your own logo](https://axelvoitier.github.io/zensical-tarn/how-to/add-project-logo/),
+[adjust colours](https://axelvoitier.github.io/zensical-tarn/how-to/adjust-colours/) and change the fonts through
+[Zensical configuration](https://axelvoitier.github.io/zensical-tarn/reference/configuration/#fonts-and-css).
 
 ## Screenshots
 
 | Light | Dark |
 | --- | --- |
-| ![Home, light](screenshots/site/site-home-light.png) | ![Home, dark](screenshots/site/site-home-dark.png) |
-| ![Sidebar navigation, light](screenshots/site/site-sidebar-navigation-light.png) | ![Sidebar navigation, dark](screenshots/site/site-sidebar-navigation-dark.png) |
-| ![Admonitions, light](screenshots/components/admonitions-light.png) | ![Admonitions, dark](screenshots/components/admonitions-dark.png) |
-| ![Code block, light](screenshots/components/code-block-light.png) | ![Code block, dark](screenshots/components/code-block-dark.png) |
+| ![Home, light](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/site/site-home-light.png) | ![Home, dark](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/site/site-home-dark.png) |
+| ![Sidebar navigation, light](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/site/site-sidebar-navigation-light.png) | ![Sidebar navigation, dark](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/site/site-sidebar-navigation-dark.png) |
+| ![Admonitions, light](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/components/admonitions-light.png) | ![Admonitions, dark](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/components/admonitions-dark.png) |
+| ![Code block, light](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/components/code-block-light.png) | ![Code block, dark](https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/screenshots/components/code-block-dark.png) |
 
-More in [`screenshots/`](screenshots/).
+More in [`screenshots/`](https://github.com/AxelVoitier/zensical-tarn/tree/main/screenshots/).
 
 ## Documentation
 
@@ -76,8 +74,8 @@ The theme's own documentation, built with Tarn: <https://axelvoitier.github.io/z
 
 ## Licence
 
-Copyright Axel Voitier. Original Tarn material is licensed under [Apache 2.0](LICENSE).
-Includes modified Zensical templates under MIT; see [NOTICE](NOTICE) and the
-[upstream licence](LICENSES/zensical-ui.MIT.txt). The combined package metadata
+Copyright Axel Voitier. Original Tarn material is licensed under [Apache 2.0](https://github.com/AxelVoitier/zensical-tarn/blob/main/LICENSE).
+Includes modified Zensical templates under MIT; see [NOTICE](https://github.com/AxelVoitier/zensical-tarn/blob/main/NOTICE) and the
+[upstream licence](https://github.com/AxelVoitier/zensical-tarn/blob/main/LICENSES/zensical-ui.MIT.txt). The combined package metadata
 records `Apache-2.0 AND MIT`. Fonts are fetched from Google Fonts, with
-[self-hosting instructions](docs/how-to/self-host-fonts.md).
+[self-hosting instructions](https://axelvoitier.github.io/zensical-tarn/how-to/self-host-fonts/).

@@ -13,21 +13,6 @@ You will see the result in your browser before you finish.
 You need Python 3.11 or later, a terminal, and a text editor. You also need an
 internet connection to install Tarn and its dependencies.
 
-Tarn's first package release is still in preparation. This lesson installs Tarn
-from its source code. Obtain a source checkout or source archive before starting.
-If you have an archive, extract it. Name the resulting source folder
-`zensical-tarn` and make sure that it contains `pyproject.toml`.
-
-Open your terminal in the directory that contains `zensical-tarn`. Your new
-`my-docs` directory will sit alongside that source folder:
-
-```text
-working-directory/
-├── zensical-tarn/
-│   └── pyproject.toml
-└── my-docs/               (created in the next step)
-```
-
 ## 1. Install Zensical and Tarn
 
 First, create a directory for your site and enter it. Then create a virtual
@@ -58,21 +43,16 @@ Make sure that the reported Python version is at least 3.11. After activation,
 your terminal prompt usually starts with `(.venv)`. Keep this terminal open and
 use it for the remaining commands.
 
-Install Tarn from the adjacent source folder in the active environment.
+Install [Tarn from PyPI](https://pypi.org/project/zensical-tarn/) in the active environment.
 Run this from `my-docs` on either platform:
 
 ```bash
-python -m pip install ../zensical-tarn
+python -m pip install zensical-tarn
 zensical --version
 ```
 
 Installing Tarn also installs its pinned Zensical dependency. The final command
 prints the installed Zensical version.
-
-!!! note "After package publication"
-    Once Tarn is published on PyPI, `python -m pip install zensical-tarn` will
-    install the published package. For this lesson, use the source installation
-    command above.
 
 ## 2. Create the project
 

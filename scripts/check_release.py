@@ -17,11 +17,11 @@ By default, unresolved decisions are reported separately from artifact errors.
 """
 
 import argparse
-import ast
 import configparser
 import hashlib
 import json
 import re
+import subprocess
 import sys
 import tarfile
 import tomllib
@@ -37,17 +37,47 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 def source_version(root: Path) -> str:
-    """Read the literal package version from its source module."""
-    tree = ast.parse((root / 'src/zensical_tarn/__init__.py').read_text(encoding='utf-8'))
-    for statement in tree.body:
-        if isinstance(statement, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == '__version__'
-            for target in statement.targets
-        ):
-            value = ast.literal_eval(statement.value)
-            if isinstance(value, str):
-                return value
-    raise ValueError('Missing literal __version__ in the theme package')
+    """Ask the configured Hatch backend for the source version."""
+    return subprocess.run(
+        [sys.executable, '-m', 'hatchling', 'version'],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def git(root: Path, *arguments: str) -> str:
+    """Run a Git query in the selected source checkout."""
+    return subprocess.run(  # noqa: S603 - Git queries use argv without a shell
+        ['git', '-C', str(root), *arguments],  # noqa: S607 - Git is required on PATH
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def verify_tag(root: Path, tag: str, version: str) -> dict[str, str | int]:
+    """Require a complete, clean checkout at the exact version tag."""
+    check_tag(version, tag)
+    if tag != f'v{version}':
+        raise ValueError('Release tags must use the vVERSION form')
+    if git(root, 'rev-parse', '--is-shallow-repository') != 'false':
+        raise ValueError('Release checks require full Git history and tags')
+    commit = git(root, 'rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}')
+    if commit != git(root, 'rev-parse', 'HEAD'):
+        raise ValueError(f'Tag {tag!r} does not point at the checked-out commit')
+    if git(root, 'tag', '--points-at', 'HEAD', '--list', 'v[0-9]*').splitlines() != [tag]:
+        raise ValueError('Each release needs its own commit with a single version tag')
+    if git(root, 'status', '--porcelain', '--untracked-files=all'):
+        raise ValueError('Release checks require a clean checkout, including untracked files')
+    return {
+        'tag': tag,
+        'tag_object': git(root, 'rev-parse', '--verify', f'refs/tags/{tag}'),
+        'commit': commit,
+        'tree': git(root, 'rev-parse', 'HEAD^{tree}'),
+        'source_date_epoch': int(git(root, 'show', '-s', '--format=%ct', 'HEAD')),
+    }
 
 
 def check_tag(version: str, tag: str | None) -> None:
@@ -93,7 +123,7 @@ def inspect_archives(root: Path, directory: Path, tag: str | None) -> dict[str, 
     """Validate local distribution contents and return their metadata."""
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']
     version = source_version(root)
-    check_tag(version, tag)
+    provenance = verify_tag(root, tag, version) if tag is not None else None
     wheels, sources = list(directory.glob('*.whl')), list(directory.glob('*.tar.gz'))
     if len(wheels) != 1 or len(sources) != 1:
         raise ValueError('Use a directory containing exactly one wheel and one source archive')
@@ -188,8 +218,10 @@ def inspect_archives(root: Path, directory: Path, tag: str | None) -> dict[str, 
         if not path or not (root / path).is_file() or path not in sdist:
             raise ValueError(f'README image missing from source archive: {path or image}')
     return {
+        'git': provenance,
         'version': version,
         'tag': tag,
+        'tag_object': git(root, 'rev-parse', '--verify', f'refs/tags/{tag}'),
         'licence_files': sorted(licences),
         'licence_expression': metadata['License-Expression'],
         'author': metadata['Author'],
@@ -234,14 +266,24 @@ def main() -> int:
     """Report local archive errors and unresolved release decisions."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dist', type=Path, default=ROOT / 'dist')
-    parser.add_argument('--tag', help='Proposed version tag; checks only, never creates a tag')
+    parser.add_argument(
+        '--tag',
+        help='Require this existing version tag at a clean HEAD; never creates a tag',
+    )
     parser.add_argument(
         '--strict',
         action='store_true',
         help='Also fail on unresolved decisions and placeholders',
     )
+    parser.add_argument(
+        '--require-tag',
+        action='store_true',
+        help='Require --tag for a release check',
+    )
     parser.add_argument('--report', type=Path, help='Write a local JSON report')
     args = parser.parse_args()
+    if args.require_tag and args.tag is None:
+        parser.error('--require-tag requires --tag')
     report: dict[str, object] = {
         'artifact_errors': [],
         'release_blockers': [],
@@ -250,7 +292,14 @@ def main() -> int:
     try:
         report.update(inspect_archives(ROOT, args.dist, args.tag))
         print('Local distribution checks passed')
-    except (ValueError, OSError, KeyError, zipfile.BadZipFile, tarfile.TarError) as error:
+    except (
+        ValueError,
+        OSError,
+        KeyError,
+        zipfile.BadZipFile,
+        tarfile.TarError,
+        subprocess.CalledProcessError,
+    ) as error:
         cast('list[str]', report['artifact_errors']).append(str(error))
     report['release_blockers'] = release_blockers(ROOT)
     for kind in ('artifact_errors', 'release_blockers'):

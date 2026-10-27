@@ -37,11 +37,11 @@ Use [your own logo](how-to/add-project-logo.md),
 
 ## Install
 
-Tarn is being prepared for its first release. With Python 3.11 or newer and an
-active virtual environment, install it from the source checkout's root:
+With Python 3.11 or newer and an active virtual environment, install
+[Tarn from PyPI](https://pypi.org/project/zensical-tarn/):
 
 ```bash
-python -m pip install .
+python -m pip install zensical-tarn
 ```
 
 This also installs the pinned Zensical dependency. The package is
@@ -51,8 +51,5 @@ This also installs the pinned Zensical dependency. The package is
 [project.theme]
 name = "tarn"
 ```
-
-After publication, `python -m pip install zensical-tarn` will install the
-published package from PyPI.
 
 The [first-site tutorial](tutorials/first-site.md) covers installation and navigation configuration for a working site.

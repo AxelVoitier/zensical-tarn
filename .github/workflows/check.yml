@@ -23,6 +23,12 @@ on:
       - 'tests/**'
   workflow_dispatch:
   workflow_call:
+    inputs:
+      ref:
+        description: "Exact commit or tag to check; defaults to the triggering commit"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -30,7 +36,7 @@ permissions:
 concurrency:
   # A caller has its own workflow name: keep its checks separate from push runs
   # and from the caller's outer concurrency group to avoid self-cancellation.
-  group: package-checks-${{ github.workflow }}-${{ github.ref }}
+  group: package-checks-${{ github.workflow }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -45,14 +51,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install build twine
+      - run: python -m pip install "pip>=25.1"
+      - run: python -m pip install --group release
+      - name: Set the build timestamp from the source commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - run: python scripts/build_css.py --check
       - run: python -m unittest discover -s tests -v
       # The default build creates an sdist, then builds the wheel from that archive.
-      - run: python -m build
+      - run: python -m build --no-isolation
       - run: python -m twine check --strict dist/*
       - run: python scripts/check_release.py --strict --report release-report.json
       - run: python -m pip install dist/*.whl
@@ -72,10 +83,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - run: python -m pip install build playwright
+      - name: Set the build timestamp from the source commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - run: python -m build --wheel
       - run: python -m pip install dist/*.whl
       - run: python -m playwright install --with-deps chromium

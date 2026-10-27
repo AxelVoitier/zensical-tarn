@@ -1,5 +1,5 @@
 # Record decisions once agreed with the project owner. These flags do not
-# authorise publication; all publishing remains outside this preparation batch.
+# authorise an upload. Follow RELEASING.md for the maintainer-controlled steps.
 [review]
 licence = true
 ownership = true

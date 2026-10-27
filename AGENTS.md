@@ -9,3 +9,9 @@ An engine update is local preparation. Publishing, deployment, tags, pushes and
 remote workflow runs require separate user instructions. Preserve existing user
 changes and keep ignored `ai-works/` planning documents private. The small public
 `release-review.toml` file is required by tests and release checks.
+
+For a package release, follow RELEASING.md and use
+`hatch run release:prepare TAG`. The version comes from Git through hatch-vcs.
+Do not hard-code it, override it through the environment, or promote archives
+from an untagged checkout. Creating or moving real tags and uploading packages
+remain separate maintainer decisions.

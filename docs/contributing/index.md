@@ -40,9 +40,11 @@ Open the local address printed by Zensical. Edit a documentation page or theme
 file and inspect the preview. Stop the server with Ctrl+C before running other
 commands in that terminal.
 
-If you use Make, `make serve-doc` opens this documentation preview in your
-browser. Use `make serve-example` to preview `examples/minimal-site/` instead.
-Both commands require the activated environment.
+With [Hatch](https://hatch.pypa.io/), use `hatch run doc:serve` to open the main
+preview or `hatch run doc:example` to preview `examples/minimal-site/`.
+Hatch creates the environment and installs the local theme in editable mode.
+Use `hatch run doc:build` for a strict build, and `hatch run check:all` for the
+CSS and regression checks. These commands replace the former Makefile tasks.
 
 ## Change a colour or size
 
@@ -131,5 +133,10 @@ your editable preview environment.
 
 For release preparation, use the complete procedure in the
 [release guide](https://github.com/AxelVoitier/zensical-tarn/blob/main/RELEASING.md).
-The current documentation workflow builds a downloadable site artifact.
-Documentation deployment is disabled while the first release is in preparation.
+The documentation workflow builds and deploys the main site to GitHub Pages.
+Package uploads are separate, explicit steps performed by the maintainer.
+
+The package version comes from Git tags through `hatch-vcs`. Tagged releases use
+names such as `v1.0.0`. Between tags, Hatch produces development versions.
+Do not edit `__version__` or force a release version through an environment
+variable. The runtime version comes from the installed distribution metadata.

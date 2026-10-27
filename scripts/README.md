@@ -7,7 +7,8 @@ describe individual checks rather than the full upgrade sequence.
 Use Python 3.11 or newer in a virtual environment. From the repository root:
 
 ```bash
-python -m pip install build twine
+python -m pip install "pip>=25.1"
+python -m pip install --group release
 python scripts/build_css.py --check
 python -m unittest discover -s tests -v
 python -m build
@@ -28,17 +29,36 @@ do not trigger checks automatically. Documentation-only changes run the docs
 workflow instead. New runs cancel older runs on the same branch.
 The manual release
 preparation workflow calls the same checks and inspects the tested Python 3.12
-artifacts without publishing them. Documentation deployment is also disabled.
-See [release preparation](../RELEASING.md) for agreed package settings and local checks.
-Its workflow file is `.github/workflows/release-preparation.yml`. Review a
+artifacts without publishing them. The documentation workflow deploys the main
+site to GitHub Pages. See the [release guide](../RELEASING.md) for package checks
+and the separate, manual TestPyPI and PyPI upload steps.
+Its workflow file is `.github/workflows/release-preparation.yml`. It checks out
+an existing Git tag, checks that exact source across the matrix, and requires
+two independent release builds to match the tested archives byte for byte.
+Review a
 branch's code and workflows before manually running checks on it; builds and
 tests execute that code. See the guide's security section for repository settings
 that need separate configuration on GitHub.
 
 `python scripts/check_release.py --report release-report.json` checks local
 archives and reports unresolved release decisions. Add `--strict` to fail on
-those decisions and placeholder URLs as well as artifact errors. `--tag v0.1.0`
-checks version agreement without creating a tag. Nothing is uploaded.
+those decisions and placeholder URLs as well as artifact errors. `--tag v1.0.0`
+requires that existing tag at a clean HEAD, checks its version and records the
+commit and tree. It never creates a tag or uploads a package.
+
+Use `hatch run release:prepare v1.0.0` for the complete release preparation. The
+detached Python 3.12 environment uses the pinned `release` dependency group.
+The script requires a clean, complete Git checkout at the tag, builds from two
+independent clones, and compares both archive hashes. It records the toolchain,
+Python version, source commit, tree, timestamp and hashes in
+`dist/v1.0.0/release-report.json`. Existing output directories are refused.
+`--tested-dist` additionally compares the artifacts from the CI matrix.
+
+The main preview commands are `hatch run doc:serve`, `hatch run doc:example`,
+and `hatch run doc:build`. Use `hatch run check:all` for the CSS and regression
+checks. The detached check environment needs no third-party Python packages;
+the tag tests require Git on PATH. `hatch run release:check --dist dist/v1.0.0 --tag v1.0.0`
+rechecks existing tagged archives without building or uploading them.
 
 ## Generated CSS
 

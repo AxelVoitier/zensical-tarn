@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Proposed version tag to validate, for example v0.1.0"
+        description: "Existing release tag to build and verify, for example v1.0.0"
         required: true
         type: string
 
@@ -13,33 +13,60 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-preparation-${{ github.ref }}
+  group: release-preparation-${{ inputs.tag }}
   cancel-in-progress: true
 
 jobs:
-  check:
-    uses: ./.github/workflows/check.yml
-  preflight:
-    needs: check
+  resolve:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.source.outputs.commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: refs/tags/${{ inputs.tag }}
+          fetch-depth: 0
+      - name: Freeze the selected tag's commit for every job
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+  check:
+    needs: resolve
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ needs.resolve.outputs.commit }}
+  preflight:
+    needs: [resolve, check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
-          path: dist/
-      - name: Check proposed release without publishing
+          path: dist/tested/
+      - run: python -m pip install "hatch==1.18.1"
+      - name: Reproduce the tagged and tested release without publishing
         env:
-          TARN_PROPOSED_TAG: ${{ inputs.tag }}
-        run: python scripts/check_release.py --strict --tag "$TARN_PROPOSED_TAG" --report release-report.json
+          TARN_RELEASE_TAG: ${{ inputs.tag }}
+        run: hatch run release:prepare "$TARN_RELEASE_TAG" --tested-dist dist/tested --output dist/release
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dist
+          path: |
+            dist/release/*.whl
+            dist/release/*.tar.gz
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: release-report
-          path: release-report.json
+          path: dist/release/release-report.json
