@@ -60,6 +60,36 @@ checks. The detached check environment needs no third-party Python packages;
 the tag tests require Git on PATH. `hatch run release:check --dist dist/v1.0.0 --tag v1.0.0`
 rechecks existing tagged archives without building or uploading them.
 
+## Standalone source archives
+
+The source archive supports wheel builds, CSS regeneration and the regression
+suite outside a Git checkout. Its compressed size must be at most 1 MiB
+(1,048,576 bytes). It contains the theme, generated CSS, token source, scripts,
+tests, licences and metadata. Three small documentation pages remain as test
+inputs. Full documentation, examples, screenshots and design exports are
+available from the repository.
+
+Extract the archive into a new directory, then run these commands there:
+
+```bash
+python -m build --wheel
+python scripts/build_css.py
+python scripts/build_css.py --check
+python -m unittest discover -s tests -v
+```
+
+Install `build` in your Python environment first. It installs the declared
+backend requirements in an isolated build environment. The archive's generated
+`PKG-INFO` retains the tag-derived version; no version override or Git checkout
+is needed. The regression suite uses the standard library and needs Git on PATH
+for tests that create temporary repositories. Missing test inputs fail the suite.
+
+Full-site, browser and official tagged release preparation checks require the
+repository. `check_release.py` checks README images against the frozen checkout
+without HTTP requests or requiring images in the source archive. It also rejects
+oversized source archives, excluded content and missing or changed source inputs.
+Its report records archive hashes, byte counts and the complete source member list.
+
 ## Generated CSS
 
 `build_css.py --check` runs the contrast checks and compares the generated result
@@ -77,8 +107,7 @@ python scripts/capture_screenshots.py
 This requires Playwright, Chromium, and internet access for the configured
 Google fonts. It refreshes `screenshots/site/`, `screenshots/components/`, and
 the screenshots embedded in `docs/assets/screenshots/`. Use `--executable`
-to select an existing Chromium installation. Rebuild the documentation and
-source archive afterwards to include the refreshed images. Logo exports are maintained separately from the documentation screenshots.
+to select an existing Chromium installation. Rebuild the documentation afterwards to include the refreshed images. Logo exports are maintained separately from the documentation screenshots.
 
 ## Upstream template overrides
 

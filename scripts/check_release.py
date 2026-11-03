@@ -34,6 +34,7 @@ from typing import BinaryIO, cast
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent.parent
+SDIST_MAX_BYTES = 1_048_576
 
 
 def source_version(root: Path) -> str:
@@ -119,6 +120,70 @@ def readme_images(text: str) -> list[str]:
     return parsed.sources + re.findall(r'!\[[^\]]*\]\(([^\s)]+)\)', text)
 
 
+def check_readme_images(root: Path) -> list[str]:
+    """Validate README images against the frozen checkout, without HTTP requests."""
+    paths: list[str] = []
+    for image in readme_images((root / 'README.md').read_text(encoding='utf-8')):
+        url = urlsplit(image)
+        if url.netloc == 'raw.githubusercontent.com':
+            parts = unquote(url.path).strip('/').split('/')
+            path = '/'.join(parts[3:])
+        elif not url.scheme and not url.netloc:
+            path = unquote(url.path)
+        else:
+            continue
+        if not path or not (root / path).is_file():
+            raise ValueError(f'README image missing from checkout: {path or image}')
+        paths.append(path)
+    return paths
+
+
+def check_sdist_contents(root: Path, contents: dict[str, bytes], size: int) -> None:
+    """Enforce the compressed budget, standalone inputs and repository exclusions."""
+    if size > SDIST_MAX_BYTES:
+        raise ValueError('Source archive exceeds 1,048,576 bytes')
+    fixtures = {
+        'design/tokens.json',
+        'design/README.md',
+        'docs/about/index.md',
+        'docs/contributing/index.md',
+    }
+    for name in contents:
+        path = PurePosixPath(name)
+        if (
+            path.parts[0] in {'screenshots', 'examples', 'ai-works', '.git', '.github'}
+            or (path.parts[0] in {'docs', 'design'} and name not in fixtures)
+            or '__pycache__' in path.parts
+            or path.suffix in {'.pyc', '.pyo'}
+        ):
+            raise ValueError(f'Excluded file in source archive: {name}')
+    required = fixtures | {
+        'pyproject.toml',
+        'README.md',
+        'LICENSE',
+        'NOTICE',
+        'PKG-INFO',
+        'CHANGELOG.md',
+        'release-review.toml',
+        'zensical.toml',
+        'pyrightconfig.json',
+        'scripts/README.md',
+    }
+    for pattern in ('src/**/*', 'scripts/*.py', 'tests/*.py', 'LICENSES/*.txt'):
+        required.update(
+            path.relative_to(root).as_posix()
+            for path in root.glob(pattern)
+            if path.is_file()
+            and '__pycache__' not in path.parts
+            and path.suffix not in {'.pyc', '.pyo'}
+        )
+    for name in sorted(required):
+        if name not in contents or (
+            name != 'PKG-INFO' and contents[name] != (root / name).read_bytes()
+        ):
+            raise ValueError(f'Source archive input missing or changed: {name}')
+
+
 def inspect_archives(root: Path, directory: Path, tag: str | None) -> dict[str, object]:
     """Validate local distribution contents and return their metadata."""
     project = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']
@@ -150,6 +215,7 @@ def inspect_archives(root: Path, directory: Path, tag: str | None) -> dict[str, 
         }
         if len(sdist) != len(members):
             raise ValueError('Duplicate paths in source archive')
+    check_sdist_contents(root, sdist, sources[0].stat().st_size)
     metadata_paths = [name for name in wheel if name.endswith('.dist-info/METADATA')]
     if len(metadata_paths) != 1 or 'PKG-INFO' not in sdist:
         raise ValueError('Missing distribution metadata')
@@ -206,18 +272,10 @@ def inspect_archives(root: Path, directory: Path, tag: str | None) -> dict[str, 
         asset = f'zensical_tarn/assets/licenses/tarn/{target}'
         if wheel.get(asset) != licences[name] or sdist.get(f'src/{asset}') != licences[name]:
             raise ValueError(f'Generated-site licence copy missing or stale: {target}')
-    for image in readme_images((root / 'README.md').read_text(encoding='utf-8')):
-        url = urlsplit(image)
-        if url.netloc == 'raw.githubusercontent.com':
-            parts = unquote(url.path).strip('/').split('/')
-            path = '/'.join(parts[3:])
-        elif not url.scheme and not url.netloc:
-            path = unquote(url.path)
-        else:
-            continue
-        if not path or not (root / path).is_file() or path not in sdist:
-            raise ValueError(f'README image missing from source archive: {path or image}')
+    images = check_readme_images(root)
     return {
+        'sdist_members': sorted(sdist),
+        'readme_images': images,
         'git': provenance,
         'version': version,
         'tag': tag,

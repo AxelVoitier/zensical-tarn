@@ -16,7 +16,13 @@ from tempfile import TemporaryDirectory
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from check_package import inspect_site
-from check_release import check_licences, check_tag, release_blockers
+from check_release import (
+    check_licences,
+    check_readme_images,
+    check_sdist_contents,
+    check_tag,
+    release_blockers,
+)
 from check_upstream import check, upstream_form
 
 
@@ -137,6 +143,68 @@ class OutputChecks(unittest.TestCase):
 
 
 class ReleaseChecks(unittest.TestCase):
+    def test_readme_images_use_checkout_files_without_network(self) -> None:
+        """Check local and repository-hosted README images without bundling them."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'README.md').write_text(
+                '<img src="https://raw.githubusercontent.com/AxelVoitier/zensical-tarn/main/logo.png">'
+                '\n![Preview](screenshots/preview.png)\n',
+                encoding='utf-8',
+            )
+            (root / 'logo.png').write_bytes(b'logo')
+            (root / 'screenshots').mkdir()
+            image = root / 'screenshots/preview.png'
+            image.write_bytes(b'preview')
+            self.assertEqual(check_readme_images(root), ['logo.png', 'screenshots/preview.png'])
+            image.unlink()
+            with self.assertRaisesRegex(ValueError, 'README image missing from checkout'):
+                check_readme_images(root)
+
+    def test_source_contract_rejects_missing_inputs_exclusions_and_oversize(self) -> None:
+        """Keep standalone sources complete and reject galleries or oversized archives."""
+        contents = {
+            path.relative_to(ROOT).as_posix(): path.read_bytes()
+            for pattern in (
+                'src/**/*',
+                'scripts/*',
+                'tests/*.py',
+                'LICENSES/*',
+                '*.toml',
+                '*.md',
+                'LICENSE',
+                'NOTICE',
+                'pyrightconfig.json',
+                'design/tokens.json',
+                'design/README.md',
+                'docs/about/index.md',
+                'docs/contributing/index.md',
+            )
+            for path in ROOT.glob(pattern)
+            if path.is_file() and '__pycache__' not in path.parts
+        }
+        contents['PKG-INFO'] = b'Metadata-Version: 2.4'
+        check_sdist_contents(ROOT, contents, 1_048_576)
+        with self.assertRaisesRegex(ValueError, '1,048,576'):
+            check_sdist_contents(ROOT, contents, 1_048_577)
+        for name in (
+            'screenshots/site/gallery.png',
+            'examples/minimal-site/zensical.toml',
+            'docs/index.md',
+            'design/logo/logo.svg',
+            'ai-works/private.md',
+        ):
+            with self.subTest(excluded=name), self.assertRaisesRegex(ValueError, 'Excluded'):
+                check_sdist_contents(ROOT, {**contents, name: b'excluded'}, 100)
+        for name in ('design/tokens.json', 'docs/about/index.md', 'tests/test_checks.py'):
+            incomplete = dict(contents)
+            del incomplete[name]
+            with (
+                self.subTest(missing=name),
+                self.assertRaisesRegex(ValueError, 'missing or changed'),
+            ):
+                check_sdist_contents(ROOT, incomplete, 100)
+
     def test_wrong_proposed_tag_is_rejected(self) -> None:
         """Accept matching tags and reject unrelated version tags."""
         for tag in (None, '0.1.0', 'v0.1.0'):

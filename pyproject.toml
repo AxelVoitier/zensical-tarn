@@ -53,7 +53,14 @@ reproducible = true
 packages = ["src/zensical_tarn"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "docs", "design", "screenshots", "scripts", "tests", "examples", "README.md", "CHANGELOG.md", "LICENSE", "LICENSES", "NOTICE", "RELEASING.md", "UPGRADING_ZENSICAL.md", "AGENTS.md", "pyrightconfig.json", "release-review.toml", "zensical.toml"]
+# Full-site checks stay in the checkout; these three small pages are regression inputs.
+include = [
+  "/src", "/scripts", "/tests", "/design/tokens.json", "/design/README.md",
+  "/docs/about/index.md", "/docs/contributing/index.md",
+  "/README.md", "/CHANGELOG.md", "/LICENSE", "/LICENSES", "/NOTICE",
+  "/RELEASING.md", "/UPGRADING_ZENSICAL.md", "/AGENTS.md",
+  "/pyrightconfig.json", "/release-review.toml", "/zensical.toml",
+]
 
 # Pin the complete backend toolchain used by official release preparation.
 # Ordinary isolated builds use build-system.requires; release builds use this

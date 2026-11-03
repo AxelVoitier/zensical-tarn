@@ -8,6 +8,7 @@
 """Regression checks for the tag and artifact boundaries of a release."""
 
 import io
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -111,6 +112,23 @@ class ReleaseArtifactChecks(unittest.TestCase):
             }
             theme = root / 'src/zensical_tarn'
             theme.mkdir(parents=True)
+            # Complete standalone inputs, independent of the metadata fixture below.
+            for name in (
+                'design/tokens.json',
+                'design/README.md',
+                'docs/about/index.md',
+                'docs/contributing/index.md',
+                'CHANGELOG.md',
+                'release-review.toml',
+                'zensical.toml',
+                'pyrightconfig.json',
+                'scripts/README.md',
+                'scripts/build_css.py',
+                'tests/test_checks.py',
+            ):
+                target = root / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / name, target)
             assets: dict[str, bytes] = {}
             for name, target in (
                 ('LICENSE', 'LICENSE.txt'),
@@ -140,6 +158,11 @@ class ReleaseArtifactChecks(unittest.TestCase):
                 )
             with tarfile.open(root / 'theme.tar.gz', 'w:gz') as source:
                 for name, data in {
+                    **{
+                        path.relative_to(root).as_posix(): path.read_bytes()
+                        for path in root.rglob('*')
+                        if path.is_file() and path.suffix not in {'.whl', '.gz'}
+                    },
                     'PKG-INFO': metadata,
                     **licences,
                     **{f'src/{name}': data for name, data in assets.items()},
