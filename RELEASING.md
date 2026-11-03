@@ -64,7 +64,7 @@ a dependency and retains its own licences. Referenced Lucide icons are supplied
 by Zensical under ISC terms.
 
 The copied UI templates retain the full MIT text in
-`LICENSES/zensical-ui.MIT.txt`, checked against Zensical UI tag `v0.0.39`.
+`LICENSES/zensical-ui.MIT.txt`, checked against Zensical UI tag `v0.0.41`.
 MIT and ISC appear in the Apache Software Foundation's
 [compatible third-party licence list](https://www.apache.org/legal/resolved.html#category-a).
 The [Apache 2.0 terms](https://www.apache.org/licenses/LICENSE-2.0) permit use,
@@ -91,13 +91,14 @@ does not independently establish the provenance of AI-assisted artwork.
 
 ## Supported environment
 
-- Zensical is pinned to `0.0.73`; the copied partials are checked against that
+- Zensical is pinned to `0.0.74`; the copied partials are checked against that
   installed version. MkDocs itself is not a supported engine.
 - Python 3.11 or newer is required. The configured CI matrix covers 3.11–3.15;
   local verification results are reported separately from CI configuration.
-  Python 3.15.1 has passed local package builds, regression tests, installed-wheel
-  documentation/example builds, configuration checks and strict release checks
-  with Zensical 0.0.73.
+  Local checks on 3 November 2026 passed all 16 regression tests, installed-wheel
+  documentation/example builds and configuration checks on Python 3.11.13,
+  3.12.11, 3.13.5, 3.14.8 and 3.15.0 with Zensical 0.0.74 and UI 0.0.41.
+  The isolated archive builds and browser checks used Python 3.14.8.
 - The package follows the system colour preference by default. Tarn's own
   documentation deliberately starts light and retains the palette toggle.
 - Fonts currently load from Google Fonts. Projects can disable loading or

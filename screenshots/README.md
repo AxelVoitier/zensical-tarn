@@ -1,7 +1,7 @@
 # Screenshots
 
 Site and component screenshots are taken at 1280 px wide, 2× scale, from a real
-Zensical 0.0.73 build of this repository's `docs/` with the installed theme and
+Zensical 0.0.74 build of this repository's `docs/` with the installed theme and
 the configured Atkinson fonts loaded. Regenerate them with
 `python scripts/capture_screenshots.py` after installing the updated theme.
 The script also refreshes the light and dark home-page previews and the sidebar image embedded in the documentation.

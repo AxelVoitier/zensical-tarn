@@ -70,11 +70,11 @@ def check(tarn: Path, zensical: Path) -> None:
 
 def main() -> None:
     """Compare installed Tarn partials with the installed engine."""
-    import zensical
+    from zensical_ui import get_theme_dir
 
     (entry,) = metadata.entry_points(group='mkdocs.themes', name='tarn')
     tarn = Path(entry.load().__file__).resolve().parent
-    check(tarn, Path(zensical.__file__).resolve().parent / 'templates')
+    check(tarn, Path(get_theme_dir()))
     print(f'Checked installed Tarn against Zensical {metadata.version("zensical")}')
 
 

@@ -83,12 +83,12 @@ source archive afterwards to include the refreshed images. Logo exports are main
 ## Upstream template overrides
 
 `check_upstream.py` compares the installed Tarn navigation and copyright
-overrides with the templates in the installed Zensical distribution. It removes only the leading
+overrides with the templates located by `zensical_ui.get_theme_dir()`. It removes only the leading
 file comments and Tarn's documented additions. Missing additions and any other
 differences fail with a diff. It needs no network access.
 
-Tarn pins Zensical to 0.0.73, whose navigation templates were exported
-from UI v0.0.39. To support another Zensical release, review its templates,
+Tarn pins Zensical to 0.0.74, which depends on `zensical-ui==0.0.41`.
+The templates and browser assets ship in that separate UI package. To support another Zensical release, review its templates,
 update the dependency constraint, and run the package checks with that version.
 A matching template comparison alone does not establish browser compatibility.
 
@@ -128,7 +128,7 @@ directory and builds them in strict mode using the installed wheel. It checks
 the actual stylesheet link and copied CSS, four navigation tab attributes,
 the how-to badge, and generated output for package internals.
 
-Zensical 0.0.73 copies theme files into generated sites, including
+Zensical 0.0.74 copies theme files into generated sites, including
 `__init__.py`, `__pycache__/__init__.cpython-<version>.pyc`, and
 `mkdocs_theme.yml`. The check reports these exact known paths for the unmodified
 minimal example and fails on additional Python or YAML files. They are a known
@@ -150,7 +150,7 @@ both this build and Tarn's documentation.
 
 The original investigation used the tagged Zensical 0.0.72 source below.
 The same output limitation and exclusion workaround are verified by the
-installed-wheel checks with Zensical 0.0.73:
+installed-wheel checks with Zensical 0.0.74:
 
 - [Theme directory discovery](https://github.com/zensical/zensical/blob/v0.0.72/python/zensical/config.py)
   uses the entry point module's `__file__`. Moving files to a normal subpackage

@@ -11,7 +11,7 @@ a step says otherwise.
 ## Work on the theme
 
 Start with an existing source checkout. You need Python 3.11 or newer and its
-`venv` module. Tarn installs Zensical 0.0.73 as a pinned dependency.
+`venv` module. Tarn installs Zensical 0.0.74 as a pinned dependency.
 
 Create and activate a virtual environment with the commands for your terminal:
 

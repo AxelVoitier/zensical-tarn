@@ -22,8 +22,13 @@ documentation deployment. Those actions need a separate instruction.
 
 The confirmed baseline on 27 October 2026 is Zensical 0.0.73 with UI 0.0.39.
 Tarn requires Python 3.11 or newer; CI covers Python 3.11–3.15. Read the current
-files before relying on those values. The commands use 0.0.73 as an example,
+files before relying on those values. The commands use 0.0.74 as an example,
 not as the version to select for every future update.
+
+On 3 November 2026, the 0.0.74 upgrade verified UI 0.0.41. The copied partial
+bodies and retained MIT licence were unchanged. Templates moved to the separate
+`zensical-ui` dependency, so the installed checkers now use its theme-directory
+helper. The theme-file copying limitation and exclusion workaround remain.
 
 ## Steps
 
@@ -48,7 +53,7 @@ broaden the dependency range, or change Tarn's own version automatically.
 Keep the following commands in one Bash session. Replace the example target:
 
 ~~~bash
-TARN_TARGET_VERSION='0.0.73'
+TARN_TARGET_VERSION='0.0.74'
 TARN_SOURCE_ROOT="$(pwd -P)"
 TARN_UPGRADE_ROOT="$(mktemp -d /tmp/tarn-zensical-upgrade.XXXXXX)"
 python3 --version
@@ -118,6 +123,13 @@ platforms. Do not bypass `Requires-Python` or silently build an unreviewed
 fallback. Report the constraint and choose an appropriate test interpreter or
 assess a source build explicitly.
 
+From Zensical 0.0.74, the engine depends on a separate `zensical-ui` package.
+Read the engine wheel metadata first, then download its exact `zensical-ui==…`
+dependency with `pip download --only-binary=:all: --no-deps` into the same
+`upstream` directory. Do not assume it matches the engine version. Earlier
+engines bundled templates under `zensical/templates/`; the current UI wheel
+uses `zensical_ui/templates/`.
+
 Inspect wheel metadata and compare the three copied partials without importing
 the new engine:
 
@@ -132,12 +144,12 @@ import sys
 import zipfile
 
 root = Path(os.environ["TARN_SOURCE_ROOT"])
-wheels = list((Path(os.environ["TARN_UPGRADE_ROOT"]) / "upstream").glob("*.whl"))
+upstream = Path(os.environ["TARN_UPGRADE_ROOT"]) / "upstream"
+wheels = list(upstream.glob("zensical-" + os.environ["TARN_TARGET_VERSION"] + "-*.whl"))
 assert len(wheels) == 1, wheels
 sys.path.insert(0, str(root / "scripts"))
 from check_upstream import upstream_form, without_header
 
-changed = []
 with zipfile.ZipFile(wheels[0]) as archive:
     metadata_paths = [name for name in archive.namelist()
                       if name.endswith(".dist-info/METADATA")]
@@ -146,17 +158,23 @@ with zipfile.ZipFile(wheels[0]) as archive:
     assert metadata["Version"] == os.environ["TARN_TARGET_VERSION"]
     print("Requires-Python:", metadata["Requires-Python"])
     print("Requires-Dist:", metadata.get_all("Requires-Dist", []))
+
+# Since 0.0.74, templates ship in the separately pinned zensical-ui wheel.
+ui_wheels = list(upstream.glob("zensical_ui-*.whl"))
+assert len(ui_wheels) == 1, ui_wheels
+changed = []
+with zipfile.ZipFile(ui_wheels[0]) as archive:
     for name in ("nav-item.html", "tabs-item.html", "copyright.html"):
         current = upstream_form(
             name, (root / "src/zensical_tarn/partials" / name).read_text()
         )
         target = without_header(
-            archive.read("zensical/templates/partials/" + name).decode()
+            archive.read("zensical_ui/templates/partials/" + name).decode()
         )
         difference = "".join(difflib.unified_diff(
             current.splitlines(True), target.splitlines(True),
             fromfile="Tarn upstream form/" + name,
-            tofile="Target Zensical/" + name,
+            tofile="Target Zensical UI/" + name,
         ))
         print(difference or name + ": unchanged")
         if difference:
@@ -200,12 +218,13 @@ If upstream changed a copied partial:
 6. Inspect CSS selectors and browser behaviour affected by the new DOM.
 
 A patch release can still require a template rebase. Identical templates also
-do not establish JavaScript or CSS compatibility.
+do not establish JavaScript or CSS compatibility. Installed checks use
+`zensical_ui.get_theme_dir()` to locate the current upstream templates.
 
 Once the UI version is confirmed, set it explicitly:
 
 ~~~bash
-TARN_UI_VERSION='0.0.39'
+TARN_UI_VERSION='0.0.41'
 export TARN_UI_VERSION
 ~~~
 

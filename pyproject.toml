@@ -26,7 +26,7 @@ classifiers = [
   "Topic :: Software Development :: Documentation",
 ]
 # Navigation partials are checked against this release. Widen after verification.
-dependencies = ["zensical==0.0.73"]
+dependencies = ["zensical==0.0.74"]
 
 [project.urls]
 Homepage = "https://github.com/AxelVoitier/zensical-tarn"

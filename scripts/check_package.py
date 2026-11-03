@@ -15,7 +15,7 @@
 
 """Build example sites outside the checkout using an installed Tarn wheel.
 
-Known package-file copying in Zensical 0.0.73 is reported explicitly. The
+Known package-file copying in Zensical 0.0.74 is reported explicitly. The
 project-level exclusion workaround must produce clean output; new leaks fail.
 """
 
@@ -93,13 +93,13 @@ def inspect_site(site: Path, page: Path, theme: Path, *, clean: bool) -> None:
     if unexpected:
         raise ValueError(f'Package internals in generated site: {sorted(unexpected)}')
     if internals:
-        print(f'KNOWN Zensical 0.0.73 output limitation: {sorted(internals)}', flush=True)
+        print(f'KNOWN Zensical 0.0.74 output limitation: {sorted(internals)}', flush=True)
     print(f'Verified site: {page.relative_to(site)} (clean output required: {clean})', flush=True)
 
 
 def main() -> None:
     """Verify installed theme resources and generated example sites."""
-    import zensical
+    from zensical_ui import get_theme_dir
 
     (entry,) = metadata.entry_points(group='mkdocs.themes', name='tarn')
     if entry.value != 'zensical_tarn':
@@ -110,7 +110,7 @@ def main() -> None:
     distribution = metadata.distribution('zensical-tarn')
     if distribution.metadata['Requires-Python'] != '>=3.11':
         raise ValueError('The installed distribution must advertise Python >=3.11')
-    check(theme, Path(zensical.__file__).resolve().parent / 'templates')
+    check(theme, Path(get_theme_dir()))
     print(
         f'Testing installed Tarn {distribution.version} with Zensical {metadata.version("zensical")}',
         flush=True,

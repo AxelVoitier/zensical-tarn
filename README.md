@@ -19,7 +19,7 @@ Tarn combines calm colours, legible type and Diátaxis navigation in a restraine
 
 ## Install
 
-Tarn requires Python 3.11 or newer and pins Zensical to version 0.0.73.
+Tarn requires Python 3.11 or newer and pins Zensical to version 0.0.74.
 See the [configuration reference](https://axelvoitier.github.io/zensical-tarn/reference/configuration/) for dependency details.
 
 With an active virtual environment, install [Tarn from PyPI](https://pypi.org/project/zensical-tarn/):

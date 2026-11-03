@@ -9,7 +9,7 @@ The theme selection belongs in `zensical.toml`:
 name = "tarn"
 ```
 
-Tarn requires Python 3.11 or newer and pins Zensical to version 0.0.73.
+Tarn requires Python 3.11 or newer and pins Zensical to version 0.0.74.
 Its navigation template overrides are checked against that release.
 
 ## Tarn settings
@@ -200,7 +200,7 @@ Set `custom_dir = "overrides"` in `project.theme`. Extending Zensical's
 
 ## Generated site files
 
-Zensical 0.0.73 copies theme package files into generated sites, including
+Zensical 0.0.74 copies theme package files into generated sites, including
 `__init__.py`, `__pycache__/__init__.cpython-<version>.pyc`, and
 `mkdocs_theme.yml`. This is a verified limitation of the pinned release.
 Tarn does not remove these files automatically.

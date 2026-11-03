@@ -52,7 +52,7 @@ primary = "custom"
 accent = "custom"
 toggle = { icon = "lucide/sun", name = "Switch to light mode" }
 
-# Zensical 0.0.73 otherwise copies these package internals into generated sites.
+# Zensical 0.0.74 otherwise copies these package internals into generated sites.
 # This is a site setting, so the installed theme cannot supply it as a default.
 [project.plugins.exclude]
 glob = ["__init__.py", "__pycache__/*", "mkdocs_theme.yml"]
