@@ -243,6 +243,8 @@ def verified_statement(
     archive: Path,
     bundle: Path,
     identity: Mapping[str, object],
+    *,
+    timeout: float | None = None,
 ) -> object:
     """Require GitHub signature/certificate policy, then validate the signed payload."""
     result = subprocess.run(
@@ -272,6 +274,7 @@ def verified_statement(
         check=True,
         capture_output=True,
         text=True,
+        timeout=timeout,
     )
     records = json.loads(result.stdout)
     if not isinstance(records, list) or len(cast('list[object]', records)) != 1:

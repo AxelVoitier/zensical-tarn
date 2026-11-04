@@ -514,3 +514,52 @@ Signed-statement verification uses an external verifier response fixture.
 It proves policy invocation and rejection behaviour, not a hosted certificate or SLSA level.
 The workflow queue, actual events and original-tag dispatch still need hosted proof.
 See [Tagged start and recovery](../RELEASING.md#tagged-start-and-recovery) for operating limits.
+
+## Partial release reconciliation
+
+`release/reconciliation.py` checks retained originals against selected destinations.
+It supplies local recovery policy for TestPyPI, PyPI and GitHub archive observations.
+It has no live destination adapter or publishing verifier implementation.
+The coordinator does not invoke it or enable uploads.
+
+Construct `Reconciler` with the retained `RecoveryCopy`, frozen source, run and attempt identities,
+current history digest, trusted publishing verifier and monotonic clock.
+Call `reconcile(destinations, publishers)` with a destination adapter and expected `Publisher` for each selected destination.
+The caller must enforce queue ownership, admission and applicable approval before this call.
+The helper rechecks the retained history and product identity before each event.
+A stale history digest or unavailable history prevents further writes and can raise an exception.
+
+`Destination.observe(deadline)` returns downloaded archive bytes and both evidence bundles per archive.
+An absent entry requires a successful complete listing of that version's archives.
+Use `None` for delayed bytes or evidence and `OSError` for an unavailable read.
+Adapters must enforce the monotonic deadline on each request and transfer.
+For GitHub, group evidence with its archive and handle other approved assets in the finalisation layer.
+
+`PublishingVerifier.verify(bundle, deadline)` must verify the signature, certificate and transparency evidence.
+It must enforce the deadline while verifying evidence.
+Its `Publication` result must contain the verified statement and certificate identity.
+Do not construct this result from unverified bundle fields or registry metadata.
+The helper checks the filename, digest, publish predicate and destination's expected publishing identity.
+It also verifies remote build evidence against the original signed build statement.
+The [PyPI publish predicate](https://docs.pypi.org/attestations/publish/v1/) permits an empty or null predicate body.
+
+The helper records observations, publishing policies, upload intent and outcomes in private history.
+It uploads only missing originals and stops on conflicting bytes or invalid evidence.
+After retrieving verified originals, it checks destinations for at most 900 seconds.
+Waits last at most 30 seconds.
+Build-verifier subprocesses receive the remaining time budget.
+A later explicit attempt reads destination state again.
+An upload intent without a verified outcome prevents automatic resubmission, even after a restart.
+If the helper records that it never sent the upload, missing work can continue.
+There is no duplicate-upload repair, replacement build or evidence bypass.
+If required evidence cannot be recovered or repaired through a supported operation, a fresh build needs a new version.
+
+`Outcome.status == 'complete'` covers only the selected archive observations and both evidence types.
+It does not establish approval, final GitHub publication or completion of the entire release.
+Local verifier responses exercise policy and do not prove hosted certificates or registry compatibility.
+Run the local scenarios with:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_reconciliation.py -v
+hatch run typing:check scripts/release tests/test_reconciliation.py
+```
