@@ -328,3 +328,59 @@ The local signature fixture needs OpenSSL. That test is skipped if OpenSSL is
 absent. It substitutes the external verifier with local signature verification.
 Actual GitHub certificate verification and hosted isolation remain unrun until
 separate remote proof. No SLSA level is claimed by these local checks.
+
+## Selected release candidate
+
+The reusable builder now includes wheel construction, wheel signing, selected-file
+checks and independent reproduction. Its coordinator remains disconnected.
+The [wheel build profile](release/wheel-build-v1.md) describes the controlled input
+and signing boundary. Hosted execution requires separate authorisation.
+
+`release/control.py` provides fixed stages for trusted workflow roles:
+
+- `input` retrieves and verifies the exact original signed sdist before wheel construction.
+- `predicate` independently selects both files and describes the wheel's exact sdist input.
+- `verify-wheel` checks the original wheel bundle against those selected files and identities.
+- `freeze` verifies both original bundles and creates the canonical candidate selection.
+- `verify-candidate` checks the manifest, original files, signatures and signed input relationship.
+
+The transfer stages require the tagged platform context and artifact IDs from the
+workflow dependency graph. They accept no build command or caller predicate.
+`build_wheel.py` runs separately in the unprivileged wheel job.
+It calls the same `prepare_release.build_wheel` function as local preparation.
+
+A frozen selection contains `candidate.json` and a `files/` directory.
+That directory contains exactly the expected sdist, wheel and two original signed bundles.
+The `tarn-candidate-v1` manifest uses UTF-8 JSON, sorted keys, compact separators
+and one trailing newline. Its SHA-256 identifies the candidate.
+It records frozen source identities, archive filenames/sizes/digests, original
+build-evidence artifact IDs/filenames/digests and both archive transport identities.
+It also records the exact sdist digest as `wheel_input_sha256`.
+The builder returns the manifest digest separately through trusted job outputs.
+
+Changing observations, test logs and reproduction reports remain outside the manifest.
+Freezing a selection does not mark it as tested.
+The builder exposes its candidate outputs only after shared checks and reproduction pass.
+The shared release path checks and installs selected files across Python 3.11–3.15.
+The browser job installs that same wheel.
+Frozen-checkout checks keep their separate purpose and do not substitute a new wheel.
+
+For local policy regression checks, run:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_candidate.py -v
+hatch run typing:check scripts/release tests/test_candidate.py
+```
+
+The signature fixtures require OpenSSL and use local keys at the external verifier boundary.
+They do not prove hosted certificates, permissions or platform isolation.
+For independent reproduction against an existing selected pair, run:
+
+```bash
+hatch run release:prepare TAG --tested-dist SELECTED_FILES --output NEW_OUTPUT
+```
+
+Use a clean checkout of the existing `TAG` and the pinned release environment.
+`SELECTED_FILES` must contain the original wheel and sdist.
+This command builds twice independently and rejects any byte difference from the selected pair.
+It leaves original selected files and signed evidence untouched.

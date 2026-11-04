@@ -14,6 +14,14 @@ on:
         required: true
         type: string
 
+    outputs:
+      candidate-artifact-id:
+        description: Original verified candidate; available only after checks and reproduction
+        value: ${{ jobs.candidate.outputs.artifact-id }}
+      candidate-digest:
+        description: SHA-256 of canonical candidate.json
+        value: ${{ jobs.candidate.outputs.manifest-digest }}
+
 permissions: {}
 
 jobs:
@@ -58,6 +66,8 @@ jobs:
           compression-level: 0
 
   attest-sdist:
+    outputs:
+      artifact-id: ${{ steps.retained.outputs.artifact-id }}
     needs: sdist
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -109,6 +119,7 @@ jobs:
           python -I scripts/release/sdist.py verify --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --artifact-id "$ARTIFACT_ID" --output "$RUNNER_TEMP/sdist-rechecked" --bundle "$BUNDLE"
           cp -- "$BUNDLE" "$RUNNER_TEMP/sdist-selected/sdist.sigstore.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: retained
         with:
           name: signed-sdist-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -117,3 +128,225 @@ jobs:
             ${{ runner.temp }}/sdist-selected/sdist.sigstore.json
           if-no-files-found: error
           compression-level: 0
+
+  wheel:
+    needs: [sdist, attest-sdist]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.archive.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Independently select the exact signed source input
+        id: input
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          SDIST_ID: ${{ needs.sdist.outputs.artifact-id }}
+          SIGNED_SDIST_ID: ${{ needs.attest-sdist.outputs.artifact-id }}
+        run: python -I scripts/release/control.py input --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist-id "$SDIST_ID" --signed-sdist-id "$SIGNED_SDIST_ID" --output "$RUNNER_TEMP/wheel-input"
+      - run: python -m pip install --no-cache-dir 'hatch==1.18.1'
+      - name: Build from the selected archive through fixed shared preparation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          SDIST: ${{ steps.input.outputs.sdist }}
+          SDIST_SHA256: ${{ steps.input.outputs.sdist-sha256 }}
+          HATCH_DATA_DIR: ${{ runner.temp }}/wheel-hatch
+        run: hatch run release:python -I scripts/release/build_wheel.py --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist "$SDIST" --sha256 "$SDIST_SHA256" --output "$RUNNER_TEMP/wheel-build"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: archive
+        with:
+          name: wheel-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/wheel-build/*.whl
+          if-no-files-found: error
+          compression-level: 0
+
+  attest-wheel:
+    needs: [sdist, attest-sdist, wheel]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    outputs:
+      artifact-id: ${{ steps.retained.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Rehash both original files and construct the protected wheel input
+        id: selected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          SDIST_ID: ${{ needs.sdist.outputs.artifact-id }}
+          SIGNED_SDIST_ID: ${{ needs.attest-sdist.outputs.artifact-id }}
+          WHEEL_ID: ${{ needs.wheel.outputs.artifact-id }}
+        run: python -I scripts/release/control.py predicate --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist-id "$SDIST_ID" --signed-sdist-id "$SIGNED_SDIST_ID" --wheel-id "$WHEEL_ID" --output "$RUNNER_TEMP/wheel-selected"
+      - uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        id: signed
+        with:
+          subject-path: ${{ steps.selected.outputs.archive }}
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/wheel-selected/predicate.json
+      - name: Verify the original wheel bundle against independently selected inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          SDIST_ID: ${{ needs.sdist.outputs.artifact-id }}
+          SIGNED_SDIST_ID: ${{ needs.attest-sdist.outputs.artifact-id }}
+          WHEEL_ID: ${{ needs.wheel.outputs.artifact-id }}
+          BUNDLE: ${{ steps.signed.outputs.bundle-path }}
+        run: |
+          python -I scripts/release/control.py verify-wheel --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist-id "$SDIST_ID" --signed-sdist-id "$SIGNED_SDIST_ID" --wheel-id "$WHEEL_ID" --bundle "$BUNDLE" --output "$RUNNER_TEMP/wheel-rechecked"
+          cp -- "$BUNDLE" "$RUNNER_TEMP/wheel-selected/wheel/wheel.sigstore.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: retained
+        with:
+          name: signed-wheel-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/wheel-selected/wheel/*
+          if-no-files-found: error
+          compression-level: 0
+
+  freeze:
+    needs: [sdist, attest-sdist, wheel, attest-wheel]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact-id: ${{ steps.retained.outputs.artifact-id }}
+      manifest-digest: ${{ steps.selected.outputs.manifest-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Verify original evidence and freeze the canonical selection
+        id: selected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          SDIST_ID: ${{ needs.sdist.outputs.artifact-id }}
+          SIGNED_SDIST_ID: ${{ needs.attest-sdist.outputs.artifact-id }}
+          WHEEL_ID: ${{ needs.wheel.outputs.artifact-id }}
+          SIGNED_WHEEL_ID: ${{ needs.attest-wheel.outputs.artifact-id }}
+        run: python -I scripts/release/control.py freeze --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist-id "$SDIST_ID" --signed-sdist-id "$SIGNED_SDIST_ID" --wheel-id "$WHEEL_ID" --signed-wheel-id "$SIGNED_WHEEL_ID" --output "$RUNNER_TEMP/frozen"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: retained
+        with:
+          name: candidate-input-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/frozen/candidate/
+          if-no-files-found: error
+          compression-level: 0
+
+  check:
+    needs: freeze
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ github.sha }}
+      candidate-artifact-id: ${{ needs.freeze.outputs.artifact-id }}
+      candidate-digest: ${{ needs.freeze.outputs.manifest-digest }}
+      tag-ref-target: ${{ inputs.tag-ref-target }}
+      tag-ref-type: ${{ inputs.tag-ref-type }}
+
+  reproduce:
+    needs: freeze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.freeze.outputs.artifact-id }}
+          path: ${{ runner.temp }}/candidate
+          merge-multiple: true
+      - name: Verify selected candidate before reproduction
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          MANIFEST_DIGEST: ${{ needs.freeze.outputs.manifest-digest }}
+        run: python -I scripts/release/control.py verify-candidate --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --output "$RUNNER_TEMP/candidate" --manifest-digest "$MANIFEST_DIGEST"
+      - run: python -m pip install --no-cache-dir 'hatch==1.18.1'
+      - name: Independently reproduce both exact tested archives
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          HATCH_DATA_DIR: ${{ runner.temp }}/reproduce-hatch
+        run: hatch run release:prepare "$RELEASE_TAG" --tested-dist "$RUNNER_TEMP/candidate/files" --output "$RUNNER_TEMP/reproduced"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reproduction-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/reproduced/release-report.json
+          if-no-files-found: error
+
+  candidate:
+    needs: [freeze, check, reproduce]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    outputs:
+      artifact-id: ${{ needs.freeze.outputs.artifact-id }}
+      manifest-digest: ${{ needs.freeze.outputs.manifest-digest }}
+    steps:
+      - run: echo 'Original candidate passed selected-file checks and independent reproduction'

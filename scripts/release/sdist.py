@@ -95,18 +95,18 @@ def source_identity(
     }
 
 
-def select_archive(
+def select_files(
     data: bytes,
     metadata: Mapping[str, object],
-    output: Path,
-    version: str,
+    expected: Mapping[str, int],
+    kind: str,
     *,
     commit: str,
     run: str,
     attempt: str,
     repository_id: str,
     artifact_id: str,
-) -> tuple[Path, dict[str, str]]:
+) -> tuple[dict[str, bytes], dict[str, str]]:
     """Validate platform artifact metadata and transport before copying one member."""
     if not all(
         re.fullmatch(r'[1-9][0-9]*', item) for item in (run, attempt, repository_id, artifact_id)
@@ -119,7 +119,7 @@ def select_archive(
     if any(
         (
             metadata.get('id') != int(artifact_id),
-            metadata.get('name') != f'sdist-{run}-{attempt}',
+            metadata.get('name') != f'{kind}-{run}-{attempt}',
             metadata.get('expired') is not False,
             producer.get('id') != int(run),
             producer.get('head_sha') != commit,
@@ -131,24 +131,56 @@ def select_archive(
     digest = 'sha256:' + hashlib.sha256(data).hexdigest()
     if metadata.get('digest') != digest:
         raise ValueError('Artifact transport digest differs')
-    name = f'zensical_tarn-{version}.tar.gz'
+    if len(data) > TRANSPORT_MAX_BYTES:
+        raise ValueError('Unexpected transport size')
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        if archive.namelist() != [name]:
-            raise ValueError('Expected only the selected source archive')
-        member = archive.getinfo(name)
-        if member.file_size > SDIST_MAX_BYTES or member.file_size == 0:
-            raise ValueError('Source archive size outside the supported bounds')
-        content = archive.read(member)
-    output.mkdir()
-    selected = output / name
-    selected.write_bytes(content)
-    return selected, {
+        names = archive.namelist()
+        if len(names) != len(expected) or set(names) != set(expected):
+            raise ValueError('Expected only the selected artifact files')
+        files: dict[str, bytes] = {}
+        for name, limit in expected.items():
+            member = archive.getinfo(name)
+            if not 0 < member.file_size <= limit:
+                raise ValueError('Artifact member size outside the supported bounds')
+            files[name] = archive.read(member)
+    return files, {
         'run_id': run,
         'run_attempt': attempt,
         'artifact_id': artifact_id,
-        'artifact_name': f'sdist-{run}-{attempt}',
+        'artifact_name': f'{kind}-{run}-{attempt}',
         'transport_digest': digest,
     }
+
+
+def select_archive(
+    data: bytes,
+    metadata: Mapping[str, object],
+    output: Path,
+    version: str,
+    *,
+    commit: str,
+    run: str,
+    attempt: str,
+    repository_id: str,
+    artifact_id: str,
+) -> tuple[Path, dict[str, str]]:
+    """Copy only the independently selected source archive."""
+    name = f'zensical_tarn-{version}.tar.gz'
+    files, transport = select_files(
+        data,
+        metadata,
+        {name: SDIST_MAX_BYTES},
+        'sdist',
+        commit=commit,
+        run=run,
+        attempt=attempt,
+        repository_id=repository_id,
+        artifact_id=artifact_id,
+    )
+    output.mkdir()
+    selected = output / name
+    selected.write_bytes(files[name])
+    return selected, transport
 
 
 PREDICATE_TYPE = 'https://slsa.dev/provenance/v1'
@@ -207,12 +239,11 @@ def check_statement(
         raise ValueError('Signed statement differs from frozen source, builder or subject policy')
 
 
-def verify_bundle(
+def verified_statement(
     archive: Path,
     bundle: Path,
     identity: Mapping[str, object],
-    transport: Mapping[str, str],
-) -> None:
+) -> object:
     """Require GitHub signature/certificate policy, then validate the signed payload."""
     result = subprocess.run(
         [
@@ -247,7 +278,17 @@ def verify_bundle(
         raise ValueError('Expected one verified signed statement')
     record = cast('dict[str, object]', records[0])
     verification = cast('dict[str, object]', record['verificationResult'])
-    check_statement(verification['statement'], identity, archive, transport)
+    return verification['statement']
+
+
+def verify_bundle(
+    archive: Path,
+    bundle: Path,
+    identity: Mapping[str, object],
+    transport: Mapping[str, str],
+) -> None:
+    """Check certificate and exact protected source policy."""
+    check_statement(verified_statement(archive, bundle, identity), identity, archive, transport)
 
 
 def platform_context(environment: Mapping[str, str], tag: str, commit: str) -> tuple[str, str, str]:
@@ -270,11 +311,13 @@ def platform_context(environment: Mapping[str, str], tag: str, commit: str) -> t
     return values[0], values[1], values[2]
 
 
-def fetch_selected(
+def fetch_files(
     identity: Mapping[str, object],
     artifact_id: str,
+    kind: str,
+    expected: Mapping[str, int],
     output: Path,
-) -> tuple[Path, dict[str, str]]:
+) -> dict[str, str]:
     """Read the exact platform artifact and independently verify its envelope."""
     run, attempt, repository_id = platform_context(
         os.environ, str(identity['tag']), str(identity['commit'])
@@ -290,17 +333,31 @@ def fetch_selected(
     data = subprocess.run(['gh', 'api', endpoint + '/zip'], capture_output=True, check=True).stdout
     if len(data) > TRANSPORT_MAX_BYTES:
         raise ValueError('Unexpected transport size')
-    return select_archive(
+    files, transport = select_files(
         data,
         metadata,
-        output,
-        str(identity['version']),
+        expected,
+        kind,
         commit=str(identity['commit']),
         run=run,
         attempt=attempt,
         repository_id=repository_id,
         artifact_id=artifact_id,
     )
+
+    output.mkdir()
+    for name, content in files.items():
+        (output / name).write_bytes(content)
+    return transport
+
+
+def fetch_selected(
+    identity: Mapping[str, object], artifact_id: str, output: Path
+) -> tuple[Path, dict[str, str]]:
+    """Read and independently verify the selected source artifact."""
+    name = f'zensical_tarn-{identity["version"]}.tar.gz'
+    transfer = fetch_files(identity, artifact_id, 'sdist', {name: SDIST_MAX_BYTES}, output)
+    return output / name, transfer
 
 
 def main() -> int:

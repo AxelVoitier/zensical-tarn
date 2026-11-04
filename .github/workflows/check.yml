@@ -29,15 +29,34 @@ on:
         required: false
         type: string
         default: ""
+      candidate-artifact-id:
+        description: Exact selected candidate artifact from the reusable builder
+        required: false
+        type: string
+        default: ""
+      candidate-digest:
+        description: SHA-256 of canonical candidate.json from trusted selection
+        required: false
+        type: string
+        default: ""
+      tag-ref-target:
+        required: false
+        type: string
+        default: ""
+      tag-ref-type:
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   # A caller has its own workflow name: keep its checks separate from push runs
   # and from the caller's outer concurrency group to avoid self-cancellation.
-  group: package-checks-${{ github.workflow }}-${{ inputs.ref || github.ref }}
-  cancel-in-progress: true
+  group: package-checks-${{ github.workflow }}-${{ inputs.candidate-artifact-id || inputs.ref || github.ref }}
+  cancel-in-progress: ${{ inputs.candidate-artifact-id == '' }}
 
 jobs:
   check:
@@ -56,6 +75,27 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.candidate-artifact-id != ''
+        with:
+          artifact-ids: ${{ inputs.candidate-artifact-id }}
+          path: ${{ runner.temp }}/candidate
+          merge-multiple: true
+      - name: Verify the exact selected candidate and both original signed statements
+        if: inputs.candidate-artifact-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ inputs.ref }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          MANIFEST_DIGEST: ${{ inputs.candidate-digest }}
+        run: |
+          test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+          python -I scripts/release/control.py verify-candidate --root . \
+          --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+          --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" \
+          --output "$RUNNER_TEMP/candidate" --manifest-digest "$MANIFEST_DIGEST"
       - run: python -m pip install "pip>=25.1"
       - run: python -m pip install --group release
       - name: Set the build timestamp from the source commit
@@ -63,14 +103,25 @@ jobs:
       - run: python scripts/build_css.py --check
       - run: python -m unittest discover -s tests -v
       # The default build creates an sdist, then builds the wheel from that archive.
-      - run: python -m build --no-isolation
-      - run: python -m twine check --strict dist/*
-      - run: python scripts/check_release.py --strict --report release-report.json
-      - run: python -m pip install dist/*.whl
+      - name: Build checkout artifacts for ordinary checks
+        if: inputs.candidate-artifact-id == ''
+        run: python -m build --no-isolation
+      - name: Validate and install ordinary checkout artifacts
+        if: inputs.candidate-artifact-id == ''
+        run: |
+          python -m twine check --strict dist/*
+          python scripts/check_release.py --strict --report release-report.json
+          python -m pip install dist/*.whl
+      - name: Validate and install the exact selected release archives
+        if: inputs.candidate-artifact-id != ''
+        run: |
+          python -m twine check --strict "$RUNNER_TEMP/candidate/files/"*.whl "$RUNNER_TEMP/candidate/files/"*.tar.gz
+          python scripts/check_release.py --strict --dist "$RUNNER_TEMP/candidate/files" --report "$RUNNER_TEMP/archive-checks.json"
+          python -m pip install "$RUNNER_TEMP/candidate/files/"*.whl
       - run: python scripts/check_package.py
       - run: python scripts/check_config.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: matrix.python == '3.12'
+        if: matrix.python == '3.12' && inputs.candidate-artifact-id == ''
         with:
           name: dist
           path: dist/*
@@ -88,11 +139,38 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.candidate-artifact-id != ''
+        with:
+          artifact-ids: ${{ inputs.candidate-artifact-id }}
+          path: ${{ runner.temp }}/candidate
+          merge-multiple: true
+      - name: Verify the exact selected candidate and both original signed statements
+        if: inputs.candidate-artifact-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ inputs.ref }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          MANIFEST_DIGEST: ${{ inputs.candidate-digest }}
+        run: |
+          test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+          python -I scripts/release/control.py verify-candidate --root . \
+          --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+          --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" \
+          --output "$RUNNER_TEMP/candidate" --manifest-digest "$MANIFEST_DIGEST"
       - run: python -m pip install build playwright
       - name: Set the build timestamp from the source commit
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-      - run: python -m build --wheel
-      - run: python -m pip install dist/*.whl
+      - name: Build and install ordinary browser artifacts
+        if: inputs.candidate-artifact-id == ''
+        run: |
+          python -m build --wheel
+          python -m pip install dist/*.whl
+      - name: Install the exact selected wheel for browser checks
+        if: inputs.candidate-artifact-id != ''
+        run: python -m pip install "$RUNNER_TEMP/candidate/files/"*.whl
       - run: python -m playwright install --with-deps chromium
       - run: python scripts/check_browser.py --artifacts browser-artifacts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
