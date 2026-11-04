@@ -1,0 +1,119 @@
+# Reusable Stage B builder. No coordinator call or remote run is enabled by this change.
+# The caller must use a local reusable call from the reviewed product tag revision.
+name: Frozen release builder
+
+on:
+  workflow_call:
+    inputs:
+      tag-ref-target:
+        description: Frozen tag ref target OID from trusted caller resolution
+        required: true
+        type: string
+      tag-ref-type:
+        description: Frozen tag ref target type (tag or commit)
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  sdist:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.archive.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Check frozen source without running the backend
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+        run: python -I scripts/release/sdist.py identity --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE"
+      - run: python -m pip install --no-cache-dir 'hatch==1.18.1'
+      - name: Build only the source archive through shared preparation
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          HATCH_DATA_DIR: ${{ runner.temp }}/build-hatch
+        run: hatch run release:python -I scripts/release/build_sdist.py "$RELEASE_TAG" "$RELEASE_COMMIT" "$RUNNER_TEMP/sdist-build" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: archive
+        with:
+          name: sdist-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sdist-build/dist/*.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+
+  attest-sdist:
+    needs: sdist
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # Read and verify the producer's exact artifact via the platform API.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Select and hash the archive; construct protected provenance
+        id: selected
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          ARTIFACT_ID: ${{ needs.sdist.outputs.artifact-id }}
+        run: >-
+          python -I scripts/release/sdist.py predicate --root .
+          --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE"
+          --artifact-id "$ARTIFACT_ID" --output "$RUNNER_TEMP/sdist-selected"
+      - uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
+        id: signed
+        with:
+          subject-path: ${{ steps.selected.outputs.archive }}
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/sdist-selected/predicate.json
+      - name: Verify original bundle against independent source and transfer policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ github.sha }}
+          TAG_REF_TARGET: ${{ inputs.tag-ref-target }}
+          TAG_REF_TYPE: ${{ inputs.tag-ref-type }}
+          ARTIFACT_ID: ${{ needs.sdist.outputs.artifact-id }}
+          BUNDLE: ${{ steps.signed.outputs.bundle-path }}
+        run: |
+          python -I scripts/release/sdist.py verify --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --artifact-id "$ARTIFACT_ID" --output "$RUNNER_TEMP/sdist-rechecked" --bundle "$BUNDLE"
+          cp -- "$BUNDLE" "$RUNNER_TEMP/sdist-selected/sdist.sigstore.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-sdist-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/sdist-selected/*.tar.gz
+            ${{ runner.temp }}/sdist-selected/selection.json
+            ${{ runner.temp }}/sdist-selected/sdist.sigstore.json
+          if-no-files-found: error
+          compression-level: 0

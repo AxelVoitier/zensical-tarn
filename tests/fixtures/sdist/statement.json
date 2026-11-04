@@ -1,0 +1,35 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "subject": [{"name": "zensical_tarn-1.2.3.tar.gz", "digest": {"sha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}}],
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://github.com/AxelVoitier/zensical-tarn/blob/main/scripts/release/sdist-build-v1.md",
+      "externalParameters": {
+        "source": {
+          "repository": "AxelVoitier/zensical-tarn",
+          "version": "1.2.3", "tag": "v1.2.3",
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "source_date_epoch": 123,
+          "tag_ref_target": "cccccccccccccccccccccccccccccccccccccccc", "tag_ref_type": "tag",
+          "coordinator": {"path": ".github/workflows/release-preparation.yml", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          "builder": {"path": ".github/workflows/release-build.yml", "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+          "toolchain": {"build": "1.6.1"}
+        }
+      },
+      "internalParameters": {"transport": {
+        "run_id": "101", "run_attempt": "2", "artifact_id": "73", "artifact_name": "sdist-101-2",
+        "transport_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }},
+      "resolvedDependencies": [{
+        "uri": "git+https://github.com/AxelVoitier/zensical-tarn@refs/tags/v1.2.3",
+        "digest": {"gitCommit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      }]
+    },
+    "runDetails": {
+      "builder": {"id": "https://github.com/AxelVoitier/zensical-tarn/.github/workflows/release-build.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+      "metadata": {"invocationId": "https://github.com/AxelVoitier/zensical-tarn/actions/runs/101/attempts/2"}
+    }
+  }
+}

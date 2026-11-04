@@ -276,3 +276,55 @@ and unittest assertions. The two HTTP handlers retain their original positional
 no-op overrides, with a specific Pyright exception for the inherited keyword
 signature. Do not use automatic fixes that extract functions, replace loops or
 lambdas, or change the test framework as part of a formatting pass.
+
+## Isolated source archive evidence
+
+The reusable `.github/workflows/release-build.yml` contains the source archive
+build and its separate signing job. It is not yet connected to the coordinator.
+The [versioned build type](release/sdist-build-v1.md) describes its inputs,
+protected evidence fields and verification policy.
+
+The unprivileged command calls the existing `prepare_release.build_sdist`:
+
+```bash
+hatch run release:python -I scripts/release/build_sdist.py TAG COMMIT NEW_WORK_DIRECTORY --tag-ref-target OID --tag-ref-type TYPE
+```
+
+`TAG` is an existing canonical product tag. `COMMIT` is its full peeled commit SHA.
+Freeze the tag ref target `OID` and its `TYPE` (`tag` or `commit`) before building.
+The reusable workflow requires these values from trusted caller resolution.
+Both build and signing jobs independently compare them with Git metadata.
+Use a clean, complete checkout at that commit and a fresh directory outside it.
+The command creates `NEW_WORK_DIRECTORY/dist/zensical_tarn-VERSION.tar.gz`.
+It does not sign or upload anything.
+
+The trusted helper can inspect source metadata without running the backend:
+
+```bash
+python -I scripts/release/sdist.py identity --root . --tag TAG --commit COMMIT
+```
+
+Its `predicate` and `verify` stages require the tagged coordinator's platform
+context, the frozen tag target/type, producer artifact ID and a fresh output
+directory outside the checkout. Supply the frozen tag through `--tag-ref-target`
+and `--tag-ref-type`. A changed annotated tag object is rejected even if its
+peeled commit stays the same.
+They read the platform artifact API and download the identified archive.
+The `verify` stage additionally requires the original signed bundle.
+They execute fixed Git/GitHub CLI queries and handle package content as data.
+These stages do not install tools or run package hooks.
+They must run only from a reviewed frozen helper revision, with the workflow's
+pinned runtimes and separate fresh-job boundary.
+A supplied commit is an expected identity, not permission to trust arbitrary code.
+
+Run the local regression seam with:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_signed_sdist.py -v
+hatch run typing:check scripts/release tests/test_signed_sdist.py
+```
+
+The local signature fixture needs OpenSSL. That test is skipped if OpenSSL is
+absent. It substitutes the external verifier with local signature verification.
+Actual GitHub certificate verification and hosted isolation remain unrun until
+separate remote proof. No SLSA level is claimed by these local checks.
