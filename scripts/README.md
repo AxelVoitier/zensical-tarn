@@ -384,3 +384,77 @@ Use a clean checkout of the existing `TAG` and the pinned release environment.
 `SELECTED_FILES` must contain the original wheel and sdist.
 This command builds twice independently and rejects any byte difference from the selected pair.
 It leaves original selected files and signed evidence untouched.
+
+## Recovery storage and operational history
+
+`release/storage.py` retains original candidate files and private operational events.
+`release/storage_api.py` supplies the authenticated GitHub API transport.
+These helpers are not connected to the coordinating workflow yet.
+Use them only from reviewed, frozen trusted code in the separate storage role.
+They handle package files as data and do not execute package hooks.
+
+Setup must retain the numeric repository ID and administrative release ID.
+The shared administrative draft uses the `release-records` tag at an already-public commit.
+Its fixed body is `Draft.body` with the `administrative` role.
+Keep that draft unpublished, independently of every product draft.
+The product draft uses its own retained release ID, canonical product tag,
+frozen source commit and `product` role marker.
+The helpers accept those identities explicitly and never choose a release by title.
+Creating drafts and configuring permissions belong to later orchestration and authorised remote setup.
+Missing administrative storage stops work. The helper never creates replacement administrative storage.
+
+Construct `Storage(GitHubAPI(), administrative_draft)` with these retained identities.
+The transport requires `GH_TOKEN` or `GITHUB_TOKEN` in the job environment.
+It uses authenticated release and asset endpoints under the fixed Tarn repository.
+It reads all release and asset pages, including pages after a short page.
+It checks repository identity, release ID, role marker, tag, target commit and draft state.
+It also resolves the actual tag ref, rather than trusting `target_commitish` alone.
+No credential belongs in a Git ref, tag annotation, event, filename or command argument.
+
+Call `Storage.retain(product, source, manifest, candidate, files, event)` before TestPyPI publication.
+Supply the trusted source identity, original manifest bytes, separately retained candidate digest
+and original candidate `files/` directory from the preceding verification stage.
+The event must identify that candidate and source with kind `recovery-stored` and empty details.
+Retention checks the original signatures and exact source-to-wheel relationship before uploading.
+It stores only `candidate.json`, the two archives and their two original signed bundles.
+It downloads them by asset ID, checks their identities and bytes, and repeats candidate verification.
+It then appends an administrative event containing all recovery locations and asset identities.
+Only successful read-back of both files and that event permits the caller to advance.
+The returned `RecoveryCopy` contains the same retained identities.
+Call `Storage.recover(copy, source, fresh_output)` to retrieve those originals without rebuilding.
+
+`Storage.append(event)` writes one canonical `tarn-event-v1` JSON asset per transition.
+Each event identifies its version, candidate digest, source commit, run, attempt, sequence,
+event kind and preceding event digest. Its details contain screened operational data.
+Before a candidate exists, its digest is `None`. Record the need for full preparation
+if a failure occurs before recoverable originals exist.
+Do not store credentials or raw logs in event details.
+Each filename contains separate hashes of the logical identity and complete contents.
+Conflicting sequences or predecessors stop advancement across every version in the shared store.
+`Storage.history(version, expected_head)` verifies every event and returns the selected version in chain order.
+Retain the returned head digest outside the draft when detecting later history deletion is required.
+A mutable store cannot independently prove that its entire history was not removed.
+
+An uncertain upload triggers a fresh authenticated read before any retry.
+An already-stored match is reused only after byte verification.
+If acceptance remains uncertain, the operation stops. A later explicit call checks again.
+Interrupted retention keeps partial files and can reuse them on retry.
+There is no overwrite, cleanup, delete, publish or Git-ref mutation operation.
+Keep incomplete copies indefinitely and published originals for the life of the release.
+Deleting an abandoned product draft requires a maintainer decision and preserves the independent history.
+Read access to drafts is intentional here. Final public-release handling belongs to later finalisation work.
+
+The caller must serialise state-changing runs through the shared release queue.
+Draft assets supply no transactional lock or independent immutable archive.
+Local scenarios cover read-back, pagination, cancellation, conflicts and separation of the two stores:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_storage.py -v
+hatch run typing:check scripts/release tests/test_storage.py
+```
+
+The signature-verifier response fixture exercises candidate policy, not hosted certificate validity.
+Actual token permissions, authenticated draft reads and exclusion of ordinary readers remain pending remote checks.
+The transport follows the [release API](https://docs.github.com/en/rest/releases/releases),
+[asset API](https://docs.github.com/en/rest/releases/assets) and
+[GitHub CLI API interface](https://cli.github.com/manual/gh_api).
