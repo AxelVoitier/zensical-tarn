@@ -1,9 +1,17 @@
 # Tarn maintenance
 
-For local development, use the existing pyenv virtual environment named `tarn`.
-Run commands with `PYENV_VERSION=tarn pyenv exec <command>` so they use that
-environment even when the shell has not activated it. See
-[scripts/README.md](scripts/README.md) for validation commands.
+Hatch is available through the existing pyenv environment named `tarn`.
+Before installing tools or creating an environment, check the Hatch environments
+in `pyproject.toml` for one that meets the task's needs. Run Hatch with
+`PYENV_VERSION=tarn pyenv exec hatch <command>`, even when the shell has not
+activated `tarn`. Use `typing:check` for strict typechecking, `check:all` for
+regression and CSS checks, and `release` for the pinned release toolchain.
+If none fits, add a dedicated Hatch environment for recurring needs or use a
+temporary environment for a one-off check. See
+[scripts/README.md](scripts/README.md) for validation commands and environment scope.
+Keep machine-specific setup instructions in this file. Public documentation and
+scripts must use portable commands, such as `hatch run typing:check`.
+Local Ruff checks use `$HOME/.config/ruff/ruff.toml` with `--config`.
 
 For a Zensical dependency update, read and follow
 [UPGRADING_ZENSICAL.md](UPGRADING_ZENSICAL.md) before editing the pin. It covers

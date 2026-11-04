@@ -235,21 +235,38 @@ monkey-patching Zensical to change its asset handling.
 
 ## Python maintenance checks
 
-Use an environment with the built Tarn wheel, Playwright, Ruff and Pyright
-installed. `pyrightconfig.json` checks every Python source file in strict mode
-against the minimum supported Python version, 3.11. Point Pyright at the same
-interpreter that has the check scripts' dependencies installed.
+Use the `typing` Hatch environment for strict typechecking across scripts,
+tests and package sources. It uses Python 3.12 with pinned Pyright and Playwright
+versions and installs the project and its declared Zensical dependency.
+Hatch stores it outside the checkout in its normal environment directory.
+Pyright discovers dependencies from the active Hatch environment.
+`pyrightconfig.json` still checks compatibility with the minimum supported
+Python version, 3.11.
 
-The following commands use Axel's global Ruff configuration. Replace the config
-path if your settings are stored elsewhere:
+With Hatch installed, run these commands from the repository root:
 
 ```bash
-python -m pip install ruff pyright playwright
-ruff format --config "$HOME/.config/ruff/ruff.toml" --target-version py311 scripts tests src
-ruff check --config "$HOME/.config/ruff/ruff.toml" --target-version py311 --extend-ignore COM812 scripts tests src
-pyright --pythonpath "$(python -c 'import sys; print(sys.executable)')"
-python -m unittest discover -s tests -v
-python scripts/build_css.py --check
+hatch run typing:check
+hatch run check:all
+```
+
+To check specific files, append their paths to `typing:check`.
+Hatch creates the environment and installs its dependencies on first use.
+The `check` environment runs the standard-library regression suite and CSS checks.
+The detached `release` environment supplies the pinned build toolchain for
+`release:prepare` and `release:check`. Reuse that environment for release-stage
+commands, for example `hatch run release:python -m twine --version`.
+The `doc` environment supplies Zensical for documentation builds and previews.
+
+The typing environment uses an editable project installation for import resolution.
+Package and browser validation still require a built wheel installed outside the checkout.
+
+For Ruff, replace `/path/to/ruff.toml` below with the location of your maintenance configuration:
+
+```bash
+python -m pip install ruff
+ruff format --config /path/to/ruff.toml --target-version py311 scripts tests src
+ruff check --config /path/to/ruff.toml --target-version py311 --extend-ignore COM812 scripts tests src
 ```
 
 `COM812` is excluded because it conflicts with Ruff's formatter. The source files

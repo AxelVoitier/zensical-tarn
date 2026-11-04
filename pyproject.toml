@@ -96,6 +96,13 @@ generate-css = "python scripts/build_css.py"
 unit = "python -m unittest discover -s tests -v"
 all = ["css", "unit"]
 
+[tool.hatch.envs.typing]
+python = "3.12"
+dependencies = ["pyright==1.1.414", "playwright==1.64.1"]
+
+[tool.hatch.envs.typing.scripts]
+check = "pyright {args}"
+
 [tool.hatch.envs.release]
 detached = true
 python = "3.12"
