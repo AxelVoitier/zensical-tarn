@@ -54,6 +54,46 @@ Python version, source commit, tree, timestamp and hashes in
 `dist/v1.0.0/release-report.json`. Existing output directories are refused.
 `--tested-dist` additionally compares the artifacts from the CI matrix.
 
+## Shared preparation stages
+
+`scripts/prepare_release.py` exposes the stages used by the local command.
+Hosted builders can call the same Python functions from a frozen helper revision.
+Add the checkout's `scripts/` directory to the Python import path first.
+Use `Path` objects for paths and fresh output directories with existing parents.
+
+| Function | Inputs | Output |
+| --- | --- | --- |
+| `validate_source(root, tag)` | Complete, clean checkout at the release tag; installed pinned tools | Tool versions and verified tag, commit, tree and source timestamp |
+| `build_sdist(root, tag, directory)` | The same checkout and tag; new work directory | Path to the sole sdist in `directory/dist/`; independent clone in `directory/source/` |
+| `build_wheel(root, sdist, expected_sha256, output, epoch)` | Toolchain configuration from the frozen checkout; selected sdist path and SHA-256 digest; new output directory; frozen source timestamp as a string | Path to the sole wheel in `output/` |
+| `compare_archives(selected, reproduced)` | Two directories, each with exactly one wheel and one sdist | Mapping of filenames to SHA-256 digests; raises `ValueError` on different names or bytes |
+
+`build_sdist` validates the toolchain, release decisions and tagged source.
+It checks source identity before and after construction and derives the timestamp from the source commit.
+`build_wheel` checks the selected digest before extraction and uses a private copy of those bytes.
+It checks the pinned toolchain and builds from that extraction outside Git.
+Its `root` supplies toolchain configuration only, not package sources.
+Both build stages set `SOURCE_DATE_EPOCH`, `PYTHONHASHSEED=0` and `TZ=UTC`.
+
+The caller must supply the wheel stage's digest and timestamp from trusted orchestration.
+An archive or build report cannot authorise its own identity.
+These function results are local build outputs, not signed evidence.
+Later hosted jobs must independently select and hash transferred files and bind them to the frozen source and builder.
+
+The local `prepare` function composes both build stages twice in separate temporary directories.
+Each build runs strict Twine checks and archive inspection.
+It compares both archive pairs and any selected `--tested-dist` pair before copying files or writing the existing report.
+Source identity is checked again before the final copy.
+`compare_archives` reads archive bytes without extracting or executing them.
+It does not run installation, browser or matrix checks.
+
+Run source validation, builds, archive inspection and package tests only in jobs without signing, publishing or release-write authority.
+Source validation asks Hatch for the version, which can execute package-controlled build code.
+Signing and publishing jobs must use separate reviewed helpers under `scripts/release/` from the frozen workflow revision.
+They must treat archives and build reports as data and must not call these package-executing stages.
+Keep their environments and caches separate from build jobs, with checkout credentials unpersisted.
+Hosted permission and transfer enforcement require separate workflow implementation and verification.
+
 The main preview commands are `hatch run doc:serve`, `hatch run doc:example`,
 and `hatch run doc:build`. Use `hatch run check:all` for the CSS and regression
 checks. The detached check environment needs no third-party Python packages;

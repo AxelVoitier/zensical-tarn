@@ -19,6 +19,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import tomllib
 from importlib import metadata
 from pathlib import Path
@@ -36,6 +37,14 @@ def artifact_hashes(directory: Path) -> dict[str, str]:
     if len(wheels) != 1 or len(sources) != 1:
         raise ValueError('Expected exactly one wheel and one source archive')
     return {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in wheels + sources}
+
+
+def compare_archives(selected: Path, reproduced: Path) -> dict[str, str]:
+    """Require identical archive names and bytes without running package code."""
+    hashes = artifact_hashes(selected)
+    if hashes != artifact_hashes(reproduced):
+        raise ValueError('Selected and reproduced archives differ')
+    return hashes
 
 
 def check_toolchain(root: Path) -> dict[str, str]:
@@ -56,8 +65,19 @@ def check_toolchain(root: Path) -> dict[str, str]:
     return tools
 
 
-def build_once(root: Path, tag: str, directory: Path, epoch: str) -> Path:
-    """Build the sdist and its wheel from a fresh clone of the exact tag."""
+def validate_source(root: Path, tag: str) -> tuple[dict[str, str], dict[str, str | int]]:
+    """Require the pinned toolchain and a clean, unblocked tagged checkout."""
+    tools = check_toolchain(root)
+    provenance = verify_tag(root, tag, source_version(root))
+    if release_blockers(root):
+        raise ValueError('Resolve the release blockers before preparing artifacts')
+    return tools, provenance
+
+
+def build_sdist(root: Path, tag: str, directory: Path) -> Path:
+    """Build only the source archive from an independently cloned release tag."""
+    _, provenance = validate_source(root, tag)
+    directory = directory.resolve()
     directory.mkdir()
     source = directory / 'source'
     output = directory / 'dist'
@@ -66,27 +86,93 @@ def build_once(root: Path, tag: str, directory: Path, epoch: str) -> Path:
         check=True,
     )
     git(source, 'checkout', '--quiet', '--detach', f'refs/tags/{tag}')
+    if provenance != verify_tag(source, tag, source_version(source)):
+        raise ValueError('Release source changed before source archive construction')
+    epoch = str(provenance['source_date_epoch'])
     environment = dict(os.environ, SOURCE_DATE_EPOCH=epoch, PYTHONHASHSEED='0', TZ='UTC')
     subprocess.run(
-        [sys.executable, '-m', 'build', '--no-isolation', '--outdir', str(output)],
+        [sys.executable, '-m', 'build', '--sdist', '--no-isolation', '--outdir', str(output)],
         cwd=source,
         env=environment,
         check=True,
     )
+    if provenance != verify_tag(root, tag, source_version(root)):
+        raise ValueError('Release source changed during source archive construction')
+    archives = list(output.glob('*.tar.gz'))
+    if len(archives) != 1:
+        raise ValueError('Expected exactly one source archive')
+    return archives[0]
+
+
+def build_wheel(root: Path, sdist: Path, expected_sha256: str, output: Path, epoch: str) -> Path:
+    """Build only a wheel from selected sdist bytes, without using checkout sources.
+
+    The caller supplies the frozen source timestamp and selected archive digest.
+    Root supplies only the pinned toolchain configuration, never wheel sources.
+    """
+    # Freeze the input bytes before checking or executing any archive content.
+    data = sdist.read_bytes()
+    if hashlib.sha256(data).hexdigest() != expected_sha256:
+        raise ValueError('Selected source archive digest does not match')
+    if output.exists():
+        raise ValueError(f'Release output already exists: {output}; use a fresh directory')
+    check_toolchain(root)
+    output = output.resolve()
+    output.mkdir()
+    environment = dict(os.environ, SOURCE_DATE_EPOCH=epoch, PYTHONHASHSEED='0', TZ='UTC')
+    with TemporaryDirectory(prefix='tarn-wheel-') as temporary:
+        work = Path(temporary)
+        selected = work / 'selected.tar.gz'
+        selected.write_bytes(data)
+        extracted = work / 'source'
+        with tarfile.open(selected) as archive:
+            archive.extractall(extracted, filter='data')
+        sources = list(extracted.iterdir())
+        if len(sources) != 1 or not sources[0].is_dir():
+            raise ValueError('Expected one source archive root directory')
+        subprocess.run(
+            [
+                sys.executable,
+                '-m',
+                'build',
+                '--wheel',
+                '--no-isolation',
+                '--outdir',
+                str(output),
+            ],
+            cwd=sources[0],
+            env=environment,
+            check=True,
+        )
+    wheels = list(output.glob('*.whl'))
+    if len(wheels) != 1:
+        raise ValueError('Expected exactly one wheel')
+    return wheels[0]
+
+
+def build_once(root: Path, tag: str, directory: Path, epoch: str) -> Path:
+    """Compose the shared stages in a fresh location for one independent build."""
+    sdist = build_sdist(root, tag, directory)
+    wheel = build_wheel(
+        root,
+        sdist,
+        hashlib.sha256(sdist.read_bytes()).hexdigest(),
+        directory / 'wheel',
+        epoch,
+    )
+    output = sdist.parent
+    shutil.move(str(wheel), output / wheel.name)
     subprocess.run(
         [sys.executable, '-m', 'twine', 'check', '--strict', *map(str, sorted(output.iterdir()))],
         check=True,
     )
-    inspect_archives(source, output, tag)
+    inspect_archives(root, output, tag)
     return output
 
 
 def prepare(root: Path, tag: str, output: Path, tested: Path | None = None) -> dict[str, object]:
     """Copy release artifacts only after two independent builds agree."""
-    tools = check_toolchain(root)
-    provenance = verify_tag(root, tag, source_version(root))
-    if release_blockers(root):
-        raise ValueError('Resolve the release blockers before preparing artifacts')
+    tools, provenance = validate_source(root, tag)
     if output.exists():
         raise ValueError(f'Release output already exists: {output}; use a fresh directory')
     with TemporaryDirectory(prefix='tarn-reproduce-') as directory:
@@ -94,10 +180,19 @@ def prepare(root: Path, tag: str, output: Path, tested: Path | None = None) -> d
         first = build_once(root, tag, work / 'first', str(provenance['source_date_epoch']))
         second = build_once(root, tag, work / 'second', str(provenance['source_date_epoch']))
         hashes = artifact_hashes(first)
-        if hashes != artifact_hashes(second):
-            raise ValueError('Independent builds differ; release artifacts were not copied')
-        if tested is not None and hashes != artifact_hashes(tested):
-            raise ValueError('Reproduced archives differ from the CI-tested artifacts')
+        try:
+            compare_archives(first, second)
+        except ValueError as error:
+            raise ValueError(
+                'Independent builds differ; release artifacts were not copied',
+            ) from error
+        if tested is not None:
+            try:
+                compare_archives(tested, first)
+            except ValueError as error:
+                raise ValueError(
+                    'Reproduced archives differ from the CI-tested artifacts',
+                ) from error
         # Detect changes to HEAD, the tag or source while the builds were running.
         if provenance != verify_tag(root, tag, source_version(root)):
             raise ValueError('Release source changed during preparation')
@@ -141,6 +236,7 @@ def main() -> int:
         OSError,
         metadata.PackageNotFoundError,
         subprocess.CalledProcessError,
+        tarfile.TarError,
     ) as error:
         print(f'Release preparation failed: {error}', file=sys.stderr)
         return 1

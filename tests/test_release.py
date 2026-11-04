@@ -7,6 +7,7 @@
 # ruff: noqa: S603, S607
 """Regression checks for the tag and artifact boundaries of a release."""
 
+import hashlib
 import io
 import shutil
 import subprocess
@@ -21,7 +22,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
 from check_release import git, inspect_archives, verify_tag
-from prepare_release import artifact_hashes, check_toolchain, prepare
+from prepare_release import artifact_hashes, build_wheel, check_toolchain, compare_archives, prepare
 
 
 class ReleaseTagChecks(unittest.TestCase):
@@ -93,6 +94,54 @@ class ReleaseTagChecks(unittest.TestCase):
 
 
 class ReleaseArtifactChecks(unittest.TestCase):
+    def test_wheel_stage_refuses_an_existing_output_directory(self) -> None:
+        """Keep selected files in an existing directory untouched."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'theme.tar.gz'
+            source.write_bytes(b'selected archive')
+            output = root / 'wheel'
+            output.mkdir()
+            original = output / 'theme.whl'
+            original.write_bytes(b'previous wheel')
+            with self.assertRaisesRegex(ValueError, 'output already exists'):
+                build_wheel(
+                    ROOT, source, hashlib.sha256(source.read_bytes()).hexdigest(), output, '1'
+                )
+            self.assertEqual(original.read_bytes(), b'previous wheel')
+
+    def test_wheel_stage_rejects_substituted_sdist_before_creating_output(self) -> None:
+        """Bind wheel construction to the selected source archive digest."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'theme.tar.gz'
+            source.write_bytes(b'selected archive')
+            selected_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+            source.write_bytes(b'substituted archive')
+            output = root / 'wheel'
+            with self.assertRaisesRegex(ValueError, 'source archive digest'):
+                build_wheel(ROOT, source, selected_digest, output, '1')
+            self.assertFalse(output.exists())
+
+    def test_selected_archives_must_match_both_reproduced_files(self) -> None:
+        """Compare selected bytes independently of package execution or reports."""
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected, reproduced = root / 'selected', root / 'reproduced'
+            for output in (selected, reproduced):
+                output.mkdir()
+                (output / 'theme.whl').write_bytes(b'wheel')
+                (output / 'theme.tar.gz').write_bytes(b'source')
+            self.assertEqual(compare_archives(selected, reproduced), artifact_hashes(selected))
+            for name in ('theme.whl', 'theme.tar.gz'):
+                with self.subTest(name=name):
+                    archive = reproduced / name
+                    original = archive.read_bytes()
+                    archive.write_bytes(b'substituted')
+                    with self.assertRaisesRegex(ValueError, 'archives differ'):
+                        compare_archives(selected, reproduced)
+                    archive.write_bytes(original)
+
     def test_archive_checks_allow_branch_builds_and_retain_tag_provenance(self) -> None:
         """Inspect untagged CI archives without resolving a nonexistent release tag."""
         with TemporaryDirectory() as directory:
