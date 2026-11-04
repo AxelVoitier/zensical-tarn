@@ -3,10 +3,69 @@
 For an engine dependency change, first follow
 [Update Tarn to a new Zensical version](UPGRADING_ZENSICAL.md).
 
-Release version 1.0.0 from the existing Git tag `v1.0.0`. Build and test that
-exact source, upload its archives to TestPyPI, then promote the same files to
-PyPI after review. The maintainer runs each upload command. CI has no package
-upload credentials. Documentation deployment is separate.
+The tagged coordinator is implemented for local verification. Hosted activation,
+registry uploads and final GitHub publication remain disabled pending separate
+setup and remote proof. The existing `1.0.0` files and tag are outside this work.
+The manual procedure below records the earlier release path.
+
+## Tagged start and recovery
+
+A candidate is a frozen selection of source, archives and build evidence.
+A recovery copy holds the original archives and their signed build evidence.
+The coordinator uses the instructions in the selected product tag.
+It rejects dispatch from `main` with an old tag supplied as data.
+Keep `workflow_dispatch` available on the default branch so historical tags remain selectable.
+
+After hosted setup and proof, the intended normal start is website tag creation.
+The website route must persist the tag without publishing a GitHub release.
+Actual website events and permitted tag-update delivery remain unproven.
+Use the remote-tag CLI fallback only if the website route proves unavailable.
+Do not recreate or move `v1.0.0` to test this process.
+
+The coordinator accepts tag `create` and tag-filtered `push` events.
+It validates the complete supported version format and excludes administrative tags.
+Release publication does not start preparation.
+Overlapping events for the same retained identity become no-ops.
+A permitted tag move repeats preparation and invalidates older attempts.
+After any package upload or production approval, changed source requires a new version.
+
+For a recorded candidate, use the generated recovery command.
+For example, a retained `v1.2.3rc1` candidate produces:
+
+```bash
+gh workflow run release-preparation.yml --repo AxelVoitier/zensical-tarn --ref v1.2.3rc1 -f mode=resume
+```
+
+The example selects the original tag as the workflow ref.
+Do not execute it until setup and remote tests are authorised.
+Resume retrieves and verifies originals and history without building archives or regenerating build evidence.
+It does not depend on ordinary reruns or temporary Actions artifacts.
+Future PyPI uploads on resume still require fresh production approval.
+Approval and publication jobs belong to the later implementation stages.
+
+Recovery does not depend on the final reporting job.
+If cancellation interrupts the history append, resume can reconcile a complete verified storage copy.
+An incomplete copy stops recovery without replacement builds.
+If no originals ever existed, inspect the retained history and both indexes first.
+Under pre-upload rules, a deliberate full preparation uses the original ref and `-f mode=prepare`.
+Lost originals or required evidence must not be replaced for an existing candidate.
+
+All coordinator runs share one fixed queue through completion and future approval waits.
+The configuration uses `cancel-in-progress: false` and `queue: max`.
+GitHub documents a limit of 100 pending runs per group.
+If a request exceeds the limit, inspect current state before starting a deliberate new request.
+Queue order is not guaranteed.
+The coordinator rechecks source, tag, history and destinations before advancing.
+Manual or API changes outside the queue can stop an attempt.
+Hosted queue scheduling and approval-wait behaviour remain pending remote proof.
+See [GitHub concurrency controls](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
+
+The activation switch `TARN_RELEASE_PREPARATION_ENABLED` defaults to disabled.
+Its retained storage configuration needs separately authorised setup.
+Current hosted preparation ends at verified builder outputs.
+Product-draft creation and automatic retention before TestPyPI belong to the later publication path.
+The isolated resume path can consume recovery copies already retained by the storage helper.
+No current coordinator job uploads packages or publishes a GitHub release.
 
 ## Prerequisites
 
@@ -171,18 +230,10 @@ python scripts/check_browser.py --artifacts browser-artifacts
 hatch run release:check --dist dist/v1.0.0 --tag v1.0.0
 ```
 
-For CI preparation, run Actions → Release preparation from the reviewed workflow
-on `main`, with `v1.0.0` as its tag input. The input selects the actual source tag
-once, then freezes its commit for every matrix and browser checkout. The final
-job checks out that same commit and requires the tag to still point to it. It
-reproduces both archives twice, and requires them to match the tested Python 3.12
-artifacts. A mismatched tag, dirty source, differing build, or differing tested
-archive fails preparation.
-
-After all jobs pass, download the `release-dist` and `release-report` artifacts.
-Extract their contents into `dist/v1.0.0/`. Upload only these approved files.
-The intermediate `dist` artifact is the matrix result used for comparison.
-No workflow uploads to either package index or creates a tag.
+For the new coordinator, follow [Tagged start and recovery](#tagged-start-and-recovery).
+Its reusable builder checks and reproduces the exact selected candidate.
+The old `main` workflow plus tag-input route is removed.
+Hosted activation and the publication path remain pending separate authorisation.
 
 ### Reproduce an earlier build
 
@@ -295,14 +346,14 @@ Record the publication date once the upload succeeds.
 | --- | --- | --- |
 | Package checks (`check.yml`) | Pushes to `main` affecting package inputs, examples, design assets, screenshots, scripts, tests, or its workflow files. | Available directly; also called in full by Release preparation. |
 | Documentation (`docs.yml`) | Pushes to `main` affecting documentation, site configuration, theme source, package metadata, or its workflow file. | Available on `main`; builds and deploys the site to GitHub Pages. |
-| Release preparation (`release-preparation.yml`) | None. | Requires an existing tag, checks that exact source, reproduces its archives twice and compares them with the tested archives. |
+| Release preparation (`release-preparation.yml`) | Product-tag create/push after separate activation. | Select the original tag and `resume` or pre-upload `prepare`. |
 
 Documentation-only changes run the docs build without the full Python matrix
 or browser checks. Changes to administrative notes such as `HANDOFF.md`,
 `PACKAGE_REVIEW.md`, and this guide do not start automatic runs. Manual and
 reusable calls bypass the push path filters and run their complete workflow.
 
-New runs cancel older runs of the same workflow on the same branch. Called
+Ordinary checks cancel older runs on the same branch. Release preparation and recovery share a non-cancelling queue. Called
 package checks have a separate concurrency group for each calling workflow,
 so release preparation cannot cancel itself or an ordinary package-check run.
 Jobs have time limits as well. All jobs still use GitHub-hosted Ubuntu runners;
@@ -318,19 +369,20 @@ candidate under this procedure. Prepare fresh tagged archives.
 ## Pull requests and workflow security
 
 Automatic PR runs are disabled. There are no `pull_request`,
-`pull_request_target`, or `workflow_run` triggers. Automatic pushes are limited
-to `main`; pushing a contributor branch does not start these workflows.
+`pull_request_target`, or `workflow_run` triggers. Ordinary package and documentation pushes are limited
+to `main`. The coordinator also accepts product-tag pushes after activation.
 Building and testing a contribution executes its Python, build hooks, templates
 and scripts, so a read-only token cannot guarantee that contributed code is
 harmless. This follows the owner's preference to avoid automatic PR execution.
 
 Review contributions before merging them into `main`. A manual run can select
 another branch, so review that branch's code and workflow changes before
-starting it. Release preparation uses the selected branch's workflow definition
-but checks out the tag input for all source builds. Review both that workflow
-and the selected tag. It never creates a Git tag.
+starting it. Release preparation requires the selected product tag as its workflow ref.
+Review that tag's source and workflow together. The coordinator never creates a Git tag.
 
-Package and release workflows request only `contents: read`. The documentation
+Package jobs use read permissions. Isolated coordinator jobs use `contents: write`
+for private draft access and append-only history. Build attestation jobs request
+`id-token: write` and `attestations: write`. They have no publisher environment. The documentation
 build also reads Pages configuration. Its separate deployment job requests
 `pages: write` and `id-token: write`, restricted to `main` and the `github-pages`
 environment. These workflows do not use package-upload credentials.

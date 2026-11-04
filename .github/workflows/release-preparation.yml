@@ -1,72 +1,161 @@
-# Preparation only: no PyPI/TestPyPI upload and no release creation.
+# Sole coordinator. Activation needs separately authorised setup and hosted proof.
+# No registry uploads or GitHub publication exist in this workflow yet.
 name: Release preparation
 
 on:
+  create:
+  push:
+    tags: ['v[0-9]*']
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Existing release tag to build and verify, for example v1.0.0"
+      mode:
+        description: Resume retained originals, or repeat full preparation before originals exist
+        type: choice
+        options: [resume, prepare]
+        default: resume
         required: true
-        type: string
 
-permissions:
-  contents: read
+permissions: {}
 
+# Keep the same group through future approval and finalisation jobs.
+# Overflow requires state inspection and a deliberate new request; no FIFO promise.
 concurrency:
-  group: release-preparation-${{ inputs.tag }}
-  cancel-in-progress: true
+  group: tarn-release
+  cancel-in-progress: false
+  queue: max
+
+env:
+  RECORD_ID: ${{ vars.TARN_RELEASE_RECORD_ID }}
+  RECORD_TARGET: ${{ vars.TARN_RELEASE_RECORD_TARGET }}
+  REPOSITORY_ID: ${{ vars.TARN_RELEASE_REPOSITORY_ID }}
 
 jobs:
   resolve:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    if: >-
+      vars.TARN_RELEASE_PREPARATION_ENABLED == 'true' &&
+      startsWith(github.ref, 'refs/tags/v') &&
+      (github.event_name != 'create' || github.event.ref_type == 'tag')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Authenticated draft reads and append-only private admission.
     outputs:
-      commit: ${{ steps.source.outputs.commit }}
+      action: ${{ steps.admission.outputs.action }}
+      head: ${{ steps.admission.outputs.head }}
+      tag-ref-target: ${{ steps.admission.outputs.tag-ref-target }}
+      tag-ref-type: ${{ steps.admission.outputs.tag-ref-type }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          persist-credentials: false
-          ref: refs/tags/${{ inputs.tag }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Freeze the selected tag's commit for every job
-        id: source
-        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-  check:
-    needs: resolve
-    uses: ./.github/workflows/check.yml
-    with:
-      ref: ${{ needs.resolve.outputs.commit }}
-  preflight:
-    needs: [resolve, check]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           persist-credentials: false
-          ref: ${{ needs.resolve.outputs.commit }}
-          fetch-depth: 0
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.12"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: dist
-          path: dist/tested/
-      - run: python -m pip install "hatch==1.18.1"
-      - name: Reproduce the tagged and tested release without publishing
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Admit frozen tagged instructions against retained operational state
+        id: admission
         env:
-          TARN_RELEASE_TAG: ${{ inputs.tag }}
-        run: hatch run release:prepare "$TARN_RELEASE_TAG" --tested-dist dist/tested --output dist/release
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python -I scripts/release/coordinator.py admit --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --output "$RUNNER_TEMP/admission.json"
+
+  prebuild:
+    needs: resolve
+    if: needs.resolve.outputs.action == 'prepare'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # Draft read only here; no package execution.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Recheck admission before starting preparation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMISSION_HEAD: ${{ needs.resolve.outputs.head }}
+        run: >-
+          python -I scripts/release/coordinator.py guard --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --head "$ADMISSION_HEAD"
+
+  build:
+    needs: [resolve, prebuild]
+    if: needs.resolve.outputs.action == 'prepare'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    uses: ./.github/workflows/release-build.yml
+    with:
+      tag-ref-target: ${{ needs.resolve.outputs.tag-ref-target }}
+      tag-ref-type: ${{ needs.resolve.outputs.tag-ref-type }}
+
+  resume:
+    needs: resolve
+    if: needs.resolve.outputs.action == 'resume'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Fetch private drafts in isolation, never execute package code.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - name: Retrieve verified originals and original evidence without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMISSION_HEAD: ${{ needs.resolve.outputs.head }}
+        run: >-
+          python -I scripts/release/coordinator.py recover --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --head "$ADMISSION_HEAD"
+          --output "$RUNNER_TEMP/originals"
+      # Later publication stages consume only these verified original files.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: release-dist
-          path: |
-            dist/release/*.whl
-            dist/release/*.tar.gz
+          name: recovered-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/originals/
           if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+
+  report:
+    needs: [resolve, prebuild, build, resume]
+    if: always() && needs.resolve.outputs.head != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          name: release-report
-          path: dist/release/release-report.json
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Best-effort private result and original-tag recovery command
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
+        run: >-
+          python -I scripts/release/coordinator.py report --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --outcome "$OUTCOME"

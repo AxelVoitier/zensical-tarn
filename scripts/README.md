@@ -27,9 +27,8 @@ CI runs these checks on Python 3.11, 3.12, 3.13, 3.14, and 3.15 for relevant
 pushes to `main`, or when invoked manually. PRs and contributor branch pushes
 do not trigger checks automatically. Documentation-only changes run the docs
 workflow instead. New runs cancel older runs on the same branch.
-The manual release
-preparation workflow calls the same checks and inspects the tested Python 3.12
-artifacts without publishing them. The documentation workflow deploys the main
+The tagged release coordinator calls the reusable builder and its selected-file checks.
+It remains disabled pending separately authorised setup and hosted proof. The documentation workflow deploys the main
 site to GitHub Pages. See the [release guide](../RELEASING.md) for package checks
 and the separate, manual TestPyPI and PyPI upload steps.
 Its workflow file is `.github/workflows/release-preparation.yml`. It checks out
@@ -280,7 +279,7 @@ lambdas, or change the test framework as part of a formatting pass.
 ## Isolated source archive evidence
 
 The reusable `.github/workflows/release-build.yml` contains the source archive
-build and its separate signing job. It is not yet connected to the coordinator.
+build and its separate signing job. The coordinator calls it only for newly admitted preparation.
 The [versioned build type](release/sdist-build-v1.md) describes its inputs,
 protected evidence fields and verification policy.
 
@@ -332,7 +331,7 @@ separate remote proof. No SLSA level is claimed by these local checks.
 ## Selected release candidate
 
 The reusable builder now includes wheel construction, wheel signing, selected-file
-checks and independent reproduction. Its coordinator remains disconnected.
+checks and independent reproduction. The coordinator calls this builder only on the preparation path.
 The [wheel build profile](release/wheel-build-v1.md) describes the controlled input
 and signing boundary. Hosted execution requires separate authorisation.
 
@@ -389,7 +388,8 @@ It leaves original selected files and signed evidence untouched.
 
 `release/storage.py` retains original candidate files and private operational events.
 `release/storage_api.py` supplies the authenticated GitHub API transport.
-These helpers are not connected to the coordinating workflow yet.
+The coordinator CLI uses these helpers for admission history, retention and resume.
+Hosted product-draft creation and automatic retention remain later publication work.
 Use them only from reviewed, frozen trusted code in the separate storage role.
 They handle package files as data and do not execute package hooks.
 
@@ -458,3 +458,59 @@ Actual token permissions, authenticated draft reads and exclusion of ordinary re
 The transport follows the [release API](https://docs.github.com/en/rest/releases/releases),
 [asset API](https://docs.github.com/en/rest/releases/assets) and
 [GitHub CLI API interface](https://cli.github.com/manual/gh_api).
+
+
+## Tagged coordinator
+
+`scripts/release/coordinator.py` runs only trusted control and verification code.
+It does not import or execute package code.
+The CLI reads platform event and workflow identity from the `GITHUB_*` environment.
+It requires the original product tag as `GITHUB_REF` and the matching workflow revision.
+It rechecks the actual remote tag, retained history and both package indexes.
+
+The `admit` stage appends one admission to the administrative draft.
+It deduplicates automatic events for the same frozen identity.
+It writes a local receipt and exposes only action, history digest and tag identity as job outputs.
+Private event contents stay in administrative storage.
+Later jobs pass `--head DIGEST` to reconstruct the admission from durable history.
+They do not depend on a temporary receipt artifact.
+
+The `guard` stage rejects changed source, history, destinations or execution identity.
+The `recover` stage accepts only a resume admission and a fresh `--output` directory.
+It retrieves and verifies the original manifest, archives and signed build evidence.
+The `retain` stage requires preparation and `--candidate-dir`.
+Supply the builder output as `--candidate-digest` and the retained draft ID as `--product-id`.
+Both archive transports must identify the admitted producer run and attempt.
+Its caller must supply the already-created, correctly identified product draft.
+It verifies originals and records `retention-started` before writing product assets.
+That event retains the builder digest and product ID across cancellation.
+It uses the storage helper before appending `recovery-stored`.
+Cancellation recovery requires that retained selection before accepting an unrecorded storage copy.
+The `report` stage attempts to record an outcome and prints the original-tag command.
+It never marks publication complete.
+
+All stages require `--root`, `--admin-id`, `--admin-target` and `--repository-id`.
+The numeric repository identity must match the platform context.
+The administrative draft must already exist with its retained ID and private role.
+Missing or changed administrative history stops work.
+There is no automatic replacement of administrative storage.
+
+The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and
+`TARN_RELEASE_REPOSITORY_ID` from repository variables.
+`TARN_RELEASE_PREPARATION_ENABLED` must equal `true` to admit hosted work.
+These variables, draft setup and activation require separate authorisation.
+The workflow contains no registry upload or release publication step.
+Product-draft creation and automatic retention belong to the later publication path.
+
+Run local service scenarios with external writes disabled:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_coordinator.py -v
+hatch run typing:check
+```
+
+The scenarios use real temporary Git repositories and external API response fixtures.
+Signed-statement verification uses an external verifier response fixture.
+It proves policy invocation and rejection behaviour, not a hosted certificate or SLSA level.
+The workflow queue, actual events and original-tag dispatch still need hosted proof.
+See [Tagged start and recovery](../RELEASING.md#tagged-start-and-recovery) for operating limits.

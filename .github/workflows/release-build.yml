@@ -1,4 +1,4 @@
-# Reusable Stage B builder. No coordinator call or remote run is enabled by this change.
+# Reusable builder called only for admitted preparation. Hosted activation remains disabled.
 # The caller must use a local reusable call from the reviewed product tag revision.
 name: Frozen release builder
 
