@@ -481,7 +481,9 @@ It retrieves and verifies the original manifest, archives and signed build evide
 The `retain` stage requires preparation and `--candidate-dir`.
 Supply the builder output as `--candidate-digest` and the retained draft ID as `--product-id`.
 Both archive transports must identify the admitted producer run and attempt.
-Its caller must supply the already-created, correctly identified product draft.
+A caller may supply an already-created, correctly identified product draft.
+Without `--product-id`, the coordinator creates a product draft under admission,
+verifies its identity and records a new admission before retaining any files.
 It verifies originals and records `retention-started` before writing product assets.
 That event retains the builder digest and product ID across cancellation.
 It uses the storage helper before appending `recovery-stored`.
@@ -499,8 +501,8 @@ The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and
 `TARN_RELEASE_REPOSITORY_ID` from repository variables.
 `TARN_RELEASE_PREPARATION_ENABLED` must equal `true` to admit hosted work.
 These variables, draft setup and activation require separate authorisation.
-The workflow contains no registry upload or release publication step.
-Product-draft creation and automatic retention belong to the later publication path.
+The workflow connects checked builder outputs to automatic product-draft retention.
+Registry uploads and release publication remain disabled.
 
 Run local service scenarios with external writes disabled:
 
@@ -562,4 +564,50 @@ Run the local scenarios with:
 ```bash
 hatch run check:python -m unittest discover -s tests -p test_reconciliation.py -v
 hatch run typing:check scripts/release tests/test_reconciliation.py
+```
+
+
+## Controlled TestPyPI path
+
+`release/coordinator.py` exposes `testpypi(...)` for controlled local adapters.
+It requires a current admission, the frozen coordinator revision and verified durable originals.
+Normal preparation must finish retention in the admitted attempt before entering this stage.
+Resume enters with the retained selection and never invokes a builder.
+Both paths use `release/testpypi.py` and the existing reconciliation policy.
+
+`PreparedDestination` takes a trusted publishing signer, verifier and upload transport.
+It signs the fixed per-file publishing claim, verifies its expected identity and subject,
+and prepares both build and publishing attestations before sending the archive.
+`upload_attestations` converts supported Sigstore v0.3 envelopes to the
+[PyPA attestation format](https://packaging.python.org/en/latest/specifications/index-hosted-attestations/).
+It copies the original base64 payload, signature, certificate and transparency entries.
+It does not reserialise the signed statement or create replacement build evidence.
+Unsupported envelope versions and verification material stop conversion.
+Conversion itself does not verify a signature.
+[PyPI requires attestations with the initial file upload](https://docs.pypi.org/attestations/producing-attestations/).
+Actual acceptance of both identities remains a hosted test requirement.
+
+After reconciliation, `publish(...)` retrieves archive bytes and both evidence types again.
+It checks them against retained originals and only then exports a candidate directory.
+Original build bundles remain beside the retrieved archive bytes for canonical verification.
+Retrieved build bundles and publishing bundles remain in separate directories.
+A failed or conflicting retrieval exposes no directory for installation.
+
+Run `check_testpypi.py` only in an unprivileged package job.
+It verifies the selected manifest and signed source-to-wheel relationship before package execution.
+It creates a fresh virtual environment, installs the exact retrieved local wheel,
+and runs the existing package and configuration site checks there.
+Dependencies come from PyPI. No source build substitutes for the retrieved wheel.
+The environment drops GitHub tokens, signing request credentials and Python path overrides.
+
+The coordinator defines separate retention, `testpypi` publisher and retrieved-file verification jobs.
+The publisher has a literal false gate; its CLI also refuses hosted publication.
+The verification job requires an explicit retrieved artifact ID and digest before entering package checks.
+There is no live registry transport or certificate-verifier adapter in this local stage.
+Their implementation and hosted proof must be reviewed before removing either disable.
+No successful local fixture result proves registry compatibility, publisher configuration or a SLSA level.
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_testpypi.py -v
+hatch run typing:check scripts/release scripts/check_testpypi.py tests/test_testpypi.py
 ```

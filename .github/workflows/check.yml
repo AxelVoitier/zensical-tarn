@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: ""
+      retrieved-testpypi:
+        description: Run clean installation/site checks on the verified retrieved candidate
+        required: false
+        type: boolean
+        default: false
       candidate-artifact-id:
         description: Exact selected candidate artifact from the reusable builder
         required: false
@@ -118,6 +123,17 @@ jobs:
           python -m twine check --strict "$RUNNER_TEMP/candidate/files/"*.whl "$RUNNER_TEMP/candidate/files/"*.tar.gz
           python scripts/check_release.py --strict --dist "$RUNNER_TEMP/candidate/files" --report "$RUNNER_TEMP/archive-checks.json"
           python -m pip install "$RUNNER_TEMP/candidate/files/"*.whl
+      - name: Clean installation and site checks on retrieved TestPyPI bytes
+        if: inputs.retrieved-testpypi && inputs.candidate-artifact-id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_COMMIT: ${{ inputs.ref }}
+          MANIFEST_DIGEST: ${{ inputs.candidate-digest }}
+        run: >-
+          python scripts/check_testpypi.py --root . --tag "$RELEASE_TAG"
+          --commit "$RELEASE_COMMIT" --manifest-digest "$MANIFEST_DIGEST"
+          --candidate "$RUNNER_TEMP/candidate" --output "$RUNNER_TEMP/clean-testpypi"
       - run: python scripts/check_package.py
       - run: python scripts/check_config.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

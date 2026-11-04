@@ -38,6 +38,12 @@ class ReleaseService:
             for draft in (self.admin, self.product)
         }
 
+    def create_product(self, tag: str, target: str, body: str) -> Release:
+        identifier = max(self.releases) + 1
+        result = Release(identifier, tag, target, body, draft=True)
+        self.releases[identifier] = result
+        return result
+
     def tag_identity(self, tag: str) -> tuple[str, str, str]:
         return self.tag_targets[tag]
 

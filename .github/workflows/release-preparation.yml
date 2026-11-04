@@ -1,5 +1,5 @@
 # Sole coordinator. Activation needs separately authorised setup and hosted proof.
-# No registry uploads or GitHub publication exist in this workflow yet.
+# Registry publication remains hard-disabled; local controlled-path proof is separate.
 name: Release preparation
 
 on:
@@ -101,6 +101,44 @@ jobs:
       tag-ref-target: ${{ needs.resolve.outputs.tag-ref-target }}
       tag-ref-type: ${{ needs.resolve.outputs.tag-ref-type }}
 
+  retain:
+    needs: [resolve, build]
+    if: needs.resolve.outputs.action == 'prepare'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      admission-head: ${{ steps.retained.outputs.admission-head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.build.outputs.candidate-artifact-id }}
+          path: ${{ runner.temp }}/candidate
+          merge-multiple: true
+      - name: Create product recovery storage and verify durable read-back
+        id: retained
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ADMISSION_HEAD: ${{ needs.resolve.outputs.head }}
+          CANDIDATE_DIGEST: ${{ needs.build.outputs.candidate-digest }}
+        run: >-
+          python -I scripts/release/coordinator.py retain --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --head "$ADMISSION_HEAD"
+          --candidate-dir "$RUNNER_TEMP/candidate" --candidate-digest "$CANDIDATE_DIGEST"
+
   resume:
     needs: resolve
     if: needs.resolve.outputs.action == 'resume'
@@ -135,8 +173,57 @@ jobs:
           path: ${{ runner.temp }}/originals/
           if-no-files-found: error
 
+  publish-testpypi:
+    needs: [resolve, retain, resume]
+    # Hard gate: no variable or dispatch input can enable registry writes in Stage B.
+    # Normal/resumed publication is exercised through controlled local adapters.
+    if: >-
+      false && always() && needs.resolve.result == 'success' &&
+      (needs.retain.result == 'success' || needs.resume.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: testpypi
+    outputs:
+      retrieved-artifact-id: ${{ steps.publication.outputs.retrieved-artifact-id }}
+      candidate-digest: ${{ steps.publication.outputs.candidate-digest }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Refuse hosted publication until registry adapters and identity proof are reviewed
+        id: publication
+        run: >-
+          python -I scripts/release/coordinator.py testpypi --uploads-disabled --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID"
+
+  verify-testpypi:
+    needs: [resolve, publish-testpypi]
+    if: >-
+      needs.publish-testpypi.result == 'success' &&
+      needs.publish-testpypi.outputs.retrieved-artifact-id != '' &&
+      needs.publish-testpypi.outputs.candidate-digest != ''
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ github.sha }}
+      candidate-artifact-id: ${{ needs.publish-testpypi.outputs.retrieved-artifact-id }}
+      candidate-digest: ${{ needs.publish-testpypi.outputs.candidate-digest }}
+      tag-ref-target: ${{ needs.resolve.outputs.tag-ref-target }}
+      tag-ref-type: ${{ needs.resolve.outputs.tag-ref-type }}
+      retrieved-testpypi: true
+
   report:
-    needs: [resolve, prebuild, build, resume]
+    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi]
     if: always() && needs.resolve.outputs.head != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10

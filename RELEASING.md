@@ -62,10 +62,16 @@ See [GitHub concurrency controls](https://docs.github.com/en/actions/how-tos/wri
 
 The activation switch `TARN_RELEASE_PREPARATION_ENABLED` defaults to disabled.
 Its retained storage configuration needs separately authorised setup.
-Current hosted preparation ends at verified builder outputs.
-Product-draft creation and automatic retention before TestPyPI belong to the later publication path.
+The coordinator now connects verified builder outputs to product-draft storage and verified read-back.
+That wiring remains unproven on GitHub until the authorised hosted tests.
 The isolated resume path can consume recovery copies already retained by the storage helper.
 No current coordinator job uploads packages or publishes a GitHub release.
+The dedicated `testpypi` publisher job has a hard disable and its CLI refuses hosted uploads.
+Local controlled destinations exercise normal publication, partial recovery and retrieval.
+The separate installation job consumes the retrieved candidate's exact wheel in a fresh environment.
+Live registry transport, certificate identities and registry acceptance remain pending.
+Changing an activation variable cannot enable the TestPyPI publisher.
+
 
 ## Prerequisites
 

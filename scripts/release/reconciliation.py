@@ -41,6 +41,24 @@ class Publication:
     statement: object
 
 
+def check_publication(
+    publication: Publication,
+    publisher: Publisher,
+    name: str,
+    archive: bytes,
+) -> None:
+    """Require the independently verified certificate identity and exact signed subject."""
+    payload = document(publication.statement)
+    if (
+        publication.publisher != publisher
+        or payload.get('_type') != 'https://in-toto.io/Statement/v1'
+        or payload.get('subject') != [{'name': name, 'digest': {'sha256': digest(archive)}}]
+        or payload.get('predicateType') != 'https://docs.pypi.org/attestations/publish/v1'
+        or payload.get('predicate') not in ({}, None)
+    ):
+        raise ReconciliationError('Unexpected publishing identity or signed publication subject')
+
+
 class PublishingVerifier(Protocol):
     """Trusted signature, certificate and transparency-log verifier boundary."""
 
@@ -159,18 +177,8 @@ class Reconciler:
             self.remaining(deadline)
             publication = self.verifier.verify(remote.publish, deadline)
             self.remaining(deadline)
-            payload = document(publication.statement)
-            if (
-                publication.publisher != publisher
-                or payload.get('_type') != 'https://in-toto.io/Statement/v1'
-                or payload.get('subject')
-                != [{'name': name, 'digest': {'sha256': digest(original)}}]
-                or payload.get('predicateType') != 'https://docs.pypi.org/attestations/publish/v1'
-                or payload.get('predicate') not in ({}, None)
-            ):
-                raise ReconciliationError(
-                    'Unexpected publishing identity or signed publication subject',
-                )
+            check_publication(publication, publisher, name, original)
+
         return (
             'verified'
             if all(item is not None for item in (remote.archive, remote.build, remote.publish))

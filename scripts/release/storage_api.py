@@ -65,7 +65,14 @@ def asset_info(value: object) -> Asset:
 class GitHubAPI:
     """Use explicit job-token authentication and fixed repository/host endpoints."""
 
-    def request(self, endpoint: str, *, data: bytes | None = None, binary: bool = False) -> bytes:
+    def request(
+        self,
+        endpoint: str,
+        *,
+        data: bytes | None = None,
+        binary: bool = False,
+        json_body: bool = False,
+    ) -> bytes:
         """Never put a credential in arguments, Git metadata, logs or filenames."""
         if not (os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')):
             raise ValueError('Explicit authenticated job token required')
@@ -88,7 +95,9 @@ class GitHubAPI:
                     '--input',
                     '-',
                     '-H',
-                    'Content-Type: application/octet-stream',
+                    'Content-Type: application/json'
+                    if json_body
+                    else 'Content-Type: application/octet-stream',
                 ],
             )
         return subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.
@@ -98,6 +107,28 @@ class GitHubAPI:
             check=True,
             timeout=120,
         ).stdout
+
+    def create_product(self, tag: str, target: str, body: str) -> Release:
+        """Create only an unpublished product draft at an existing frozen tag."""
+        data = json.dumps(
+            {
+                'tag_name': tag,
+                'target_commitish': target,
+                'name': tag,
+                'body': body,
+                'draft': True,
+                'prerelease': True,
+            },
+        ).encode()
+        return release_info(
+            json.loads(
+                self.request(
+                    f'repos/{REPOSITORY}/releases',
+                    data=data,
+                    json_body=True,
+                ),
+            ),
+        )
 
     def tag_identity(self, tag: str) -> tuple[str, str, str]:
         """Resolve actual ref and peeled commit rather than target_commitish alone."""

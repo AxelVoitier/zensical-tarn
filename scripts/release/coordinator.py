@@ -18,9 +18,18 @@ from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from release.candidate import canonical, verify_candidate
+from release.reconciliation import (
+    Clock,
+    Destination,
+    Outcome,
+    Publisher,
+    PublishingVerifier,
+    Reconciler,
+)
 from release.sdist import COORDINATOR, REPOSITORY, VERSION, source_identity
 from release.storage import Asset, Draft, Event, Record, RecoveryCopy, ReleaseAPI, Storage, digest
 from release.storage_api import GitHubAPI, document
+from release.testpypi import publish
 
 
 def selected_source(root: Path) -> dict[str, object]:
@@ -363,6 +372,46 @@ def report(root: Path, storage: Storage, outcome: str) -> dict[str, object]:
     return {'command': command, 'outcome': outcome, 'publication': 'disabled'}
 
 
+def prepare_product(root: Path, storage: Storage, receipt: dict[str, object]) -> dict[str, object]:
+    """Create a product draft under admission, then freeze its observed identity."""
+    event = guard(root, storage, receipt)
+    source = document(event.details['source'])
+    source_before, records, observed = current(root, storage)
+    if event.details['action'] != 'prepare' or observed['github']:
+        raise ValueError('Automatic draft creation requires a fresh product selection')
+    marker = Draft(
+        1,
+        'product',
+        str(source['tag']),
+        str(source['commit']),
+        storage.administrative.repository_id,
+    )
+    created = storage.api.create_product(marker.tag, marker.target, marker.body)
+    product = Draft(created.id, 'product', marker.tag, marker.target, marker.repository_id)
+    storage.product(product, source)
+    source_after, after_records, after = current(root, storage)
+    if (
+        source_after != source_before
+        or after_records != records
+        or after['registries'] != observed['registries']
+    ):
+        raise ValueError('State changed during product draft creation')
+    details = {**event.details, 'observations': after}
+    admitted = Event(
+        event.version,
+        None,
+        event.source,
+        event.run,
+        event.attempt,
+        event.sequence + 1,
+        'admitted',
+        str(receipt['head']),
+        details,
+    )
+    record = storage.append(admitted)
+    return {'head': record.digest, 'event': asdict(admitted), 'action': 'prepare'}
+
+
 def selected_stage(args: argparse.Namespace, storage: Storage) -> dict[str, object]:
     """Retrieve the durable admission and check it before any selected operation."""
     if args.head is not None:
@@ -388,19 +437,25 @@ def selected_stage(args: argparse.Namespace, storage: Storage) -> dict[str, obje
         if (
             event.details['action'] != 'prepare'
             or args.candidate_dir is None
-            or args.product_id is None
             or args.candidate_digest is None
         ):
             raise ValueError(
-                'Preparation admission, builder candidate digest and product draft ID required',
+                'Preparation admission and builder candidate digest required',
             )
         manifest = (args.candidate_dir / 'candidate.json').read_bytes()
         candidate = args.candidate_digest
         if digest(manifest) != candidate:
             raise ValueError('Original candidate digest differs from builder selection')
         check_producer(manifest, event.run, event.attempt)
+        if args.product_id is None:
+            receipt = prepare_product(args.root, storage, receipt)
+            event = Event(**document(receipt['event']))  # type: ignore[arg-type]
+            products = cast('list[object]', document(event.details['observations'])['github'])
+            product_id = int(str(document(products[0])['id']))
+        else:
+            product_id = args.product_id
         product = Draft(
-            args.product_id,
+            product_id,
             'product',
             str(source['tag']),
             str(source['commit']),
@@ -439,13 +494,68 @@ def selected_stage(args: argparse.Namespace, storage: Storage) -> dict[str, obje
                 {},
             ),
         )
-    return {'status': 'pass'}
+    return {'status': 'pass', 'admission-head': receipt['head']}
+
+
+def testpypi(  # noqa: PLR0917 - Explicit trusted service boundaries for local acceptance.
+    root: Path,
+    storage: Storage,
+    head: str,
+    destination: Destination,
+    verifier: PublishingVerifier,
+    clock: Clock,
+    output: Path,
+) -> Outcome:
+    """Use admitted retained originals for normal and resumed controlled publication."""
+    source, records, observed = current(root, storage)
+    admissions = [record for record in records if record.digest == head]
+    if len(admissions) != 1:
+        raise ValueError('Original admission head required')
+    admission = admissions[0]
+    event = admission.event
+    if (
+        event.kind != 'admitted'
+        or event.details.get('source') != source
+        or event.run != os.environ['GITHUB_RUN_ID']
+        or event.attempt != os.environ['GITHUB_RUN_ATTEMPT']
+        or document(event.details['observations'])['registries'] != observed['registries']
+    ):
+        raise ValueError('Stale TestPyPI admission or changed source/destinations')
+    later = records[event.sequence :]
+    if event.details['action'] == 'prepare':
+        if [record.event.kind for record in later] != ['retention-started', 'recovery-stored']:
+            raise ValueError('Normal TestPyPI requires verified durable retention')
+        if any(
+            (record.event.run, record.event.attempt) != (event.run, event.attempt)
+            for record in later
+        ):
+            raise ValueError('Retention belongs to a different attempt')
+        retained = recovery_copy(later[-1].event.details['recovery'])
+    elif event.details['action'] == 'resume' and not later:
+        retained = recovery_copy(event.details['recovery'])
+    else:
+        raise ValueError('Fresh preparation or resume admission required')
+    reconciler = Reconciler(
+        storage,
+        retained,
+        source,
+        event.run,
+        event.attempt,
+        records[-1].digest,
+        verifier,
+        clock,
+    )
+    publisher = Publisher(REPOSITORY, Path(COORDINATOR).name, str(source['commit']), 'testpypi')
+    return publish(reconciler, destination, publisher, output)
 
 
 def main() -> int:
     """Trusted coordinator CLI; preparation never selects instructions using a tag input."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('stage', choices=['admit', 'guard', 'recover', 'retain', 'report'])
+    parser.add_argument(
+        'stage',
+        choices=['admit', 'guard', 'recover', 'retain', 'report', 'testpypi'],
+    )
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--admin-id', required=True, type=int)
     parser.add_argument('--admin-target', required=True)
@@ -456,6 +566,7 @@ def main() -> int:
     parser.add_argument('--candidate-digest')
     parser.add_argument('--product-id', type=int)
     parser.add_argument('--head')
+    parser.add_argument('--uploads-disabled', action='store_true')
     parser.add_argument(
         '--outcome',
         choices=['success', 'failure', 'cancelled', 'skipped'],
@@ -463,6 +574,12 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
+        if args.stage == 'testpypi':
+            raise ValueError(
+                'Hosted TestPyPI uploads are disabled. Use the controlled publication API '
+                'for local '
+                'acceptance; live registry and certificate adapters need separate proof.',
+            )
         if args.repository_id != os.environ['GITHUB_REPOSITORY_ID']:
             raise ValueError('Repository numeric identity differs from retained setup')
         storage = Storage(
@@ -495,6 +612,9 @@ def main() -> int:
             }
             with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
                 stream.writelines(f'{key}={value}\n' for key, value in outputs.items())
+        if args.stage == 'retain' and os.environ.get('GITHUB_OUTPUT'):
+            with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
+                stream.write(f'admission-head={result["admission-head"]}\n')
         public_result = {key: value for key, value in result.items() if key != 'event'}
         print(json.dumps(public_result, sort_keys=True))
     except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError) as error:
