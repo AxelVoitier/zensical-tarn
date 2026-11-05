@@ -51,9 +51,32 @@ class ReviewMaterial:
     checks: Mapping[str, CheckResult]
 
 
+def _changelog_headings(changelog: str) -> list[re.Match[str]]:
+    """Mask fenced examples for heading detection, preserving original text offsets."""
+    visible: list[str] = []
+    fence: str | None = None
+    for line in changelog.splitlines(keepends=True):
+        marker = re.match(r'^ {0,3}(`{3,}|~{3,})([^\r\n]*)', line)
+        if fence is not None:
+            if (
+                marker is not None
+                and marker[1][0] == fence[0]
+                and len(marker[1]) >= len(fence)
+                and not marker[2].strip()
+            ):
+                fence = None
+            visible.append(re.sub(r'[^\r\n]', ' ', line))
+        elif marker is not None and (marker[1][0] == '~' or '`' not in marker[2]):
+            fence = marker[1]
+            visible.append(re.sub(r'[^\r\n]', ' ', line))
+        else:
+            visible.append(line)
+    return list(re.finditer(r'^ {0,3}##[ \t]+(.+)$', ''.join(visible), re.MULTILINE))
+
+
 def changelog_section(changelog: str, version: str) -> str:
     """Select one complete version section, rejecting absent, empty or duplicate entries."""
-    headings = list(re.finditer(r'^##\s+(.+)$', changelog, re.MULTILINE))
+    headings = _changelog_headings(changelog)
     selected = [
         index
         for index, match in enumerate(headings)

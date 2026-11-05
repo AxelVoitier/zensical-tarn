@@ -158,6 +158,21 @@ class ApprovalChecks(unittest.TestCase):
                         self.review()
         self.assertEqual(self.production.writes, [])
 
+    def test_fenced_headings_preserve_the_complete_changelog_and_later_entries(self) -> None:
+        original = self.material
+        for fence in ('```', '~~~'):
+            with self.subTest(fence=fence):
+                changelog = (
+                    f'## [1.2.3]\n\n- First change.\n\n{fence}markdown\n'
+                    f'## Example heading\n{fence}\n\n'
+                    '- Later security fix.\n\n## [1.2.2]\n\n- Older.\n'
+                )
+                self.material = fixtures.replace(original, changelog=changelog)
+                review = json.loads(self.review())
+                self.assertIn('- Later security fix.', review['changelog'])
+                self.assertIn(f'{fence}markdown\n## Example heading\n{fence}', review['notes'])
+                self.assertNotIn('- Older.', review['notes'])
+
     def test_missing_or_empty_changelog_blocks_review(self) -> None:
         original = self.material
         for changelog in (
