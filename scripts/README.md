@@ -101,6 +101,10 @@ rechecks existing tagged archives without building or uploading them.
 
 ## Standalone source archives
 
+For permission and approval checks, use the separately authorised
+[hosted release-control probes](#hosted-release-control-probes).
+They do not execute the package or build release archives.
+
 The source archive supports wheel builds, CSS regeneration and the regression
 suite outside a Git checkout. Its compressed size must be at most 1 MiB
 (1,048,576 bytes). It contains the theme, generated CSS, token source, scripts,
@@ -128,6 +132,52 @@ repository. `check_release.py` checks README images against the frozen checkout
 without HTTP requests or requiring images in the source archive. It also rejects
 oversized source archives, excluded content and missing or changed source inputs.
 Its report records archive hashes, byte counts and the complete source member list.
+
+## Hosted release-control probes
+
+`check_release_controls.py` is a hosted integration test for the GitHub API.
+Its `prepare`, `package`, `public` and `cleanup` stages use the exact permissions
+declared in `.github/workflows/release-controls.yml`. Do not run write stages
+with a maintainer token to claim job-token proof.
+
+Configure the retained administrative ID, source target and repository ID as
+described in the release guide. Keep `TARN_RELEASE_PREPARATION_ENABLED=false`.
+The workflow requires a reviewed setup tag named `v0-release-controls-COMMIT`,
+where `COMMIT` is the full SHA of that tag's source. Push the reviewed source
+and create the setup tag only with separate setup authorisation. Then dispatch:
+
+```bash
+gh workflow run check.yml --repo AxelVoitier/zensical-tarn --ref v0-release-controls-COMMIT -f release-controls=true
+```
+
+The existing Package checks entrypoint selects the workflow from that ref.
+The control mode skips package and browser execution. It never gives the probe
+workflow a Trusted Publisher registration. The approval job has no token
+permissions or registry upload code.
+
+The privileged preparation stage validates the real administrative identity,
+including its fixed tag, role, numeric ID and exact marker. It creates a
+disposable unpublished draft on already-public source, uploads a harmless
+fixture and compares its authenticated download with the original bytes.
+The package-token stage requires release creation to return a permission denial
+and requires signing identity access to be absent. Rate limits, transport
+errors and invalid requests do not count as permission proof.
+The public stage sends unauthenticated requests and requires HTTP 404.
+
+Cleanup verifies the disposable identity before deletion and observes HTTP 404
+afterwards. It then compares the independent administrative asset fingerprint.
+An empty history proves continued identity and access only. Retention of
+nonempty operational history still needs a fixture or later retained events.
+An unprotected administrative tag created implicitly for a disposable draft
+can remain after deletion. It contains no private record data.
+
+If a stage fails, inspect the run and private destination state before retrying.
+Raw API errors, draft contents and asset bytes stay out of public logs.
+A lost creation response can leave an unpublished fixture. An unexpected
+package-token write can leave a separate unpublished draft. Do not retry blindly
+or delete records by title. Recover their exact IDs and verify the run-specific
+`release-controls-probe-RUN-ATTEMPT` tag, source, marker and draft state first.
+The real `release-records` draft is never a deletion target.
 
 ## Generated CSS
 

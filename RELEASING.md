@@ -406,6 +406,11 @@ of workflow changes, and require approval for workflows from all outside
 contributors. Those repository settings have not been changed here. Disabling
 the existing PR triggers is not a repository-wide ban on future PR workflows.
 
+Source and workflow review can precede a direct push. The maintainer does not
+require pull requests. Branch protection prevents deletion and force pushes;
+it does not enforce independent review of a direct push. The production
+environment still requires explicit approval with administrative bypass disabled.
+
 If uploads later move into CI, use
 [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 with a dedicated environment and a manual approval step. Configure separate
@@ -439,6 +444,30 @@ Both new jobs and hosted commands remain disabled.
 Actual environment enforcement, authenticated check and approval transport, publishing adapters and production verification remain pending separately authorised work.
 Local scenarios prove rejection and recovery policy only.
 For the trusted interfaces and failure meanings, read [Candidate-bound production approval](scripts/README.md#candidate-bound-production-approval).
+
+## Check hosted release controls
+
+The manual Package checks workflow has a separate `release-controls` mode.
+It calls the isolated control probes instead of the package and browser jobs.
+Run it only under separately authorised setup instructions from a reviewed,
+frozen `v0-release-controls-COMMIT` tag. Replace `COMMIT` with its full source SHA.
+This name matches the environment's tag filter but is not a package version.
+Keep release preparation disabled throughout the test.
+
+The probes read the retained administrative draft, write and retrieve a
+disposable draft asset, require a package job's release-write attempt to fail,
+and require anonymous draft and asset reads to fail. Cleanup deletes only the
+exact disposable draft and rechecks the independent administrative history.
+The final job waits at the real `pypi` environment. Its sole step reports success.
+It has no checkout, package execution, signing identity or publishing authority.
+Approve that test job through the normal environment review interface.
+This approval authorises no package upload.
+
+Retain the run identity, exact source, permission observations and configuration
+privately. Registry registration still needs registry-side evidence. This probe
+does not exchange registry credentials, publish packages, prove TestPyPI
+transport or establish a SLSA build level. For commands and failed-probe recovery,
+read [Hosted release-control probes](scripts/README.md#hosted-release-control-probes).
 
 ## Final GitHub publication and recovery
 

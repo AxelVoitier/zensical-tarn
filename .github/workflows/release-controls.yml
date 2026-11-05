@@ -1,0 +1,106 @@
+# Separately authorised hosted probes. No package execution or registry upload.
+name: Release control probes
+
+on:
+  workflow_call:
+
+permissions: {}
+
+concurrency:
+  group: tarn-release
+  cancel-in-progress: false
+  queue: max
+
+env:
+  RECORD_ID: ${{ vars.TARN_RELEASE_RECORD_ID }}
+  RECORD_TARGET: ${{ vars.TARN_RELEASE_RECORD_TARGET }}
+  RECORD_REPOSITORY_ID: ${{ vars.TARN_RELEASE_REPOSITORY_ID }}
+  PREPARATION_ENABLED: ${{ vars.TARN_RELEASE_PREPARATION_ENABLED }}
+
+jobs:
+  prepare:
+    if: >-
+      github.ref == format('refs/tags/v0-release-controls-{0}', github.sha) &&
+      vars.TARN_RELEASE_PREPARATION_ENABLED == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      fixture_id: ${{ steps.probe.outputs.fixture_id }}
+      asset_id: ${{ steps.probe.outputs.asset_id }}
+      snapshot: ${{ steps.probe.outputs.snapshot }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read retained record and verify disposable draft/asset read-back
+        id: probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I scripts/check_release_controls.py prepare
+
+  package-token:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require denied release writes with a package job token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
+          ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
+        run: python3 -I scripts/check_release_controls.py package
+
+  anonymous-access:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read # Checkout only. The HTTP probes never send a token.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require public denial for unpublished drafts and their assets
+        env:
+          FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
+          ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
+        run: python3 -I scripts/check_release_controls.py public
+
+  cleanup:
+    needs: [prepare, package-token, anonymous-access]
+    if: always() && needs.prepare.outputs.fixture_id != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Remove only the disposable draft and recheck retained history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
+          RECORD_SNAPSHOT: ${{ needs.prepare.outputs.snapshot }}
+        run: python3 -I scripts/check_release_controls.py cleanup
+
+  approval-gate:
+    needs: [prepare, package-token, anonymous-access, cleanup]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: pypi
+    permissions: {}
+    steps:
+      - name: Confirm the real environment gate without publishing authority
+        run: echo 'Approval gate passed. This job has no package, signing, release-write or publishing authority.'
