@@ -28,6 +28,7 @@ jobs:
       contents: write
     outputs:
       fixture_id: ${{ steps.probe.outputs.fixture_id }}
+      product_fixture_id: ${{ steps.probe.outputs.product_fixture_id }}
       asset_id: ${{ steps.probe.outputs.asset_id }}
       snapshot: ${{ steps.probe.outputs.snapshot }}
     steps:
@@ -39,7 +40,7 @@ jobs:
         id: probe
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 -I scripts/check_release_controls.py prepare
+        run: python3 -I scripts/release/controls.py prepare
 
   package-token:
     needs: prepare
@@ -57,7 +58,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
           ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
-        run: python3 -I scripts/check_release_controls.py package
+        run: python3 -I scripts/release/controls.py package
 
   anonymous-access:
     needs: prepare
@@ -74,7 +75,7 @@ jobs:
         env:
           FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
           ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
-        run: python3 -I scripts/check_release_controls.py public
+        run: python3 -I scripts/release/controls.py public
 
   cleanup:
     needs: [prepare, package-token, anonymous-access]
@@ -92,8 +93,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           FIXTURE_ID: ${{ needs.prepare.outputs.fixture_id }}
+          PRODUCT_FIXTURE_ID: ${{ needs.prepare.outputs.product_fixture_id }}
+          ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
           RECORD_SNAPSHOT: ${{ needs.prepare.outputs.snapshot }}
-        run: python3 -I scripts/check_release_controls.py cleanup
+        run: python3 -I scripts/release/controls.py cleanup
 
   approval-gate:
     needs: [prepare, package-token, anonymous-access, cleanup]

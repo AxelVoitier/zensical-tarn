@@ -135,7 +135,7 @@ Its report records archive hashes, byte counts and the complete source member li
 
 ## Hosted release-control probes
 
-`check_release_controls.py` is a hosted integration test for the GitHub API.
+`release/controls.py` is a hosted integration test for the GitHub API.
 Its `prepare`, `package`, `public` and `cleanup` stages use the exact permissions
 declared in `.github/workflows/release-controls.yml`. Do not run write stages
 with a maintainer token to claim job-token proof.
@@ -164,10 +164,11 @@ and requires signing identity access to be absent. Rate limits, transport
 errors and invalid requests do not count as permission proof.
 The public stage sends unauthenticated requests and requires HTTP 404.
 
-Cleanup verifies the disposable identity before deletion and observes HTTP 404
-afterwards. It then compares the independent administrative asset fingerprint.
-An empty history proves continued identity and access only. Retention of
-nonempty operational history still needs a fixture or later retained events.
+Preparation also creates a separate empty product fixture. Cleanup verifies its
+identity before deletion and observes HTTP 404 afterwards. It then retrieves the
+nonempty record fixture and requires its original bytes to remain unchanged.
+After removing that fixture, it compares the real administrative fingerprint.
+The actual shared record stays unchanged throughout these fixture operations.
 An unprotected administrative tag created implicitly for a disposable draft
 can remain after deletion. It contains no private record data.
 

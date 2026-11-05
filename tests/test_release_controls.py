@@ -13,10 +13,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'scripts'))
-import check_release_controls
+from release import controls as check_release_controls
 
 PREFIX = 'repos/AxelVoitier/zensical-tarn'
 SOURCE = 'a' * 40
+PROOF_BODY = '{"schema":"tarn-controls-probe-v1","tag":"release-controls-probe-101-1"}\n'
 RECORD_BODY = (
     '{"repository":"AxelVoitier/zensical-tarn","repository_id":"123",'
     '"role":"administrative","schema":"tarn-storage-v1","tag":"release-records",'
@@ -35,6 +36,8 @@ ENV = {
     'GITHUB_REF': 'refs/tags/v0-release-controls-' + 'b' * 40,
     'PREPARATION_ENABLED': 'false',
     'FIXTURE_ID': '20',
+    'PRODUCT_FIXTURE_ID': '21',
+    'ASSET_ID': '30',
     # SHA-256 of the canonical empty asset list, b'[]\n'.
     'RECORD_SNAPSHOT': '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570',
 }
@@ -46,7 +49,9 @@ class GitHubCommands:
     def __init__(self, denied_status: int | None = 403) -> None:
         self.denied_status = denied_status
         self.denied_message = 'Resource not accessible by integration'
-        self.deleted = False
+        self.deleted: set[str] = set()
+        self.retrieved_history_after_product_deletion = False
+        self.corrupt_history = False
 
     def denied(self, argv: list[str]) -> None:
         if self.denied_status is not None:
@@ -61,23 +66,36 @@ class GitHubCommands:
     def call(self, argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         endpoint = next(item for item in argv if item.startswith(PREFIX))
         if 'DELETE' in argv:
-            self.deleted = True
+            self.deleted.add(endpoint.rsplit('/', 1)[1])
             return subprocess.CompletedProcess(argv, 0, b'', b'')
         if 'POST' in argv:
             self.denied(argv)
             data: object = {'id': 30, 'body': 'PRIVATE-SENTINEL'}
-        elif endpoint == PREFIX + '/releases/20':
-            if self.deleted:
+        elif endpoint in (PREFIX + '/releases/20', PREFIX + '/releases/21'):
+            identifier = endpoint.rsplit('/', 1)[1]
+            if identifier in self.deleted:
                 self.denied(argv)
             data = {
-                'id': 20,
-                'tag_name': 'release-controls-probe-101-1',
+                'id': int(identifier),
+                'tag_name': 'release-controls-probe-101-1'
+                + ('-product' if identifier == '21' else ''),
                 'target_commitish': SOURCE,
                 'draft': True,
-                'body': (
-                    '{"schema":"tarn-controls-probe-v1","tag":"release-controls-probe-101-1"}\n'
-                ),
+                'body': PROOF_BODY,
             }
+        elif endpoint == PREFIX + '/releases/20/assets?per_page=100&page=1':
+            data = [
+                {
+                    'id': 30,
+                    'name': 'controls-proof.json',
+                    'size': len(PROOF_BODY),
+                    'state': 'uploaded',
+                }
+            ]
+        elif endpoint == PREFIX + '/releases/assets/30':
+            self.retrieved_history_after_product_deletion = '21' in self.deleted
+            content = b'changed history' if self.corrupt_history else PROOF_BODY.encode()
+            return subprocess.CompletedProcess(argv, 0, content, b'')
         elif endpoint == PREFIX:
             data = {'id': 123}
         elif endpoint == PREFIX + '/releases/10':
@@ -115,7 +133,7 @@ class HostedProbeTests(unittest.TestCase):
         stream = io.StringIO()
         with (
             patch.dict(os.environ, {**ENV, **(extra or {})}, clear=True),
-            patch.object(sys, 'argv', ['check_release_controls.py', stage]),
+            patch.object(sys, 'argv', ['controls.py', stage]),
             patch('subprocess.run', side_effect=service.call),
             contextlib.redirect_stdout(stream),
         ):
@@ -156,7 +174,16 @@ class HostedProbeTests(unittest.TestCase):
         self.assertFalse(service.deleted)
 
     def test_cleanup_preserves_independent_administrative_storage(self) -> None:
-        self.assertIn('cleanup passed', self.invoke('cleanup', GitHubCommands(404)))
+        service = GitHubCommands(404)
+        self.assertIn('cleanup passed', self.invoke('cleanup', service))
+        self.assertTrue(service.retrieved_history_after_product_deletion)
+
+    def test_changed_independent_history_stops_cleanup_before_record_deletion(self) -> None:
+        service = GitHubCommands(404)
+        service.corrupt_history = True
+        with self.assertRaises(SystemExit):
+            self.invoke('cleanup', service)
+        self.assertNotIn('20', service.deleted)
 
 
 if __name__ == '__main__':

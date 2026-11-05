@@ -456,8 +456,10 @@ Keep release preparation disabled throughout the test.
 
 The probes read the retained administrative draft, write and retrieve a
 disposable draft asset, require a package job's release-write attempt to fail,
-and require anonymous draft and asset reads to fail. Cleanup deletes only the
-exact disposable draft and rechecks the independent administrative history.
+and require anonymous draft and asset reads to fail. Cleanup proves that a
+nonempty record fixture survives deletion of a separate product fixture.
+It deletes only the exact disposable fixtures and rechecks the real
+administrative history.
 The final job waits at the real `pypi` environment. Its sole step reports success.
 It has no checkout, package execution, signing identity or publishing authority.
 Approve that test job through the normal environment review interface.

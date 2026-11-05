@@ -20,7 +20,7 @@ import urllib.request
 from http import HTTPStatus
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from release.candidate import canonical
 from release.sdist import REPOSITORY
 from release.storage import Draft, Storage
@@ -81,47 +81,56 @@ def snapshot(storage: Storage) -> str:
     return hashlib.sha256(canonical(assets)).hexdigest()
 
 
-def fixture(api: GitHubAPI, identifier: int, record: Draft) -> None:
+def fixture(api: GitHubAPI, identifier: int, record: Draft, tag: str) -> None:
     """Deletion authority never includes the shared record or a product release."""
     if identifier == record.id:
         raise ValueError('The administrative record is not a disposable fixture')
     current = api.release(identifier)
     if (
         not current.draft
-        or current.tag != fixture_tag()
+        or current.tag != tag
         or current.target != record.target
         or current.body != fixture_body()
     ):
         raise ValueError('Disposable fixture identity changed')
 
 
-def prepare(api: GitHubAPI, record: Draft) -> None:
-    """Read the real record, then exercise draft/asset writes on a fixture only."""
-    storage = Storage(api, record)
-    output('snapshot', snapshot(storage))
-    # A rerun has a different attempt/name. A lost create response requires inspection.
+def draft_payload(record: Draft, tag: str) -> bytes:
+    """Use the same valid request for allowed and denied creation probes."""
+    return canonical(
+        {
+            'tag_name': tag,
+            'target_commitish': record.target,
+            'name': 'Disposable release-control probe',
+            'body': fixture_body(),
+            'draft': True,
+            'prerelease': True,
+            'make_latest': 'false',
+        }
+    )
+
+
+def create_fixture(api: GitHubAPI, record: Draft, tag: str) -> int:
+    """A lost creation response requires inspection, never a blind retry."""
     response = document(
         json.loads(
             api.request(
                 f'repos/{REPOSITORY}/releases',
-                data=canonical(
-                    {
-                        'tag_name': fixture_tag(),
-                        'target_commitish': record.target,
-                        'name': 'Disposable release-control probe',
-                        'body': fixture_body(),
-                        'draft': True,
-                        'prerelease': True,
-                        'make_latest': 'false',
-                    }
-                ),
+                data=draft_payload(record, tag),
                 json_body=True,
             )
         )
     )
-    identifier = number(response.get('id'))
+    return number(response.get('id'))
+
+
+def prepare(api: GitHubAPI, record: Draft) -> None:
+    """Read the real record, then exercise draft/asset writes on fixtures only."""
+    storage = Storage(api, record)
+    output('snapshot', snapshot(storage))
+    identifier = create_fixture(api, record, fixture_tag())
     output('fixture_id', identifier)
-    fixture(api, identifier, record)
+    fixture(api, identifier, record, fixture_tag())
     payload = fixture_body().encode()
     api.upload(identifier, 'controls-proof.json', payload)
     assets = api.assets_page(identifier, 1)
@@ -130,6 +139,11 @@ def prepare(api: GitHubAPI, record: Draft) -> None:
     if api.download(assets[0].id) != payload:
         raise ValueError('Authenticated fixture read-back differs')
     output('asset_id', assets[0].id)
+    product = create_fixture(api, record, fixture_tag() + '-product')
+    output('product_fixture_id', product)
+    if product == identifier:
+        raise ValueError('Disposable product and record fixtures must be independent')
+    fixture(api, product, record, fixture_tag() + '-product')
 
 
 def denied(
@@ -167,17 +181,7 @@ def package(api: GitHubAPI, record: Draft) -> None:
     denied(
         api,
         f'repos/{REPOSITORY}/releases',
-        data=canonical(
-            {
-                'tag_name': fixture_tag() + '-denied',
-                'target_commitish': record.target,
-                'name': 'Unexpected read-only-token write',
-                'body': fixture_body(),
-                'draft': True,
-                'prerelease': True,
-                'make_latest': 'false',
-            }
-        ),
+        data=draft_payload(record, fixture_tag() + '-denied'),
     )
 
 
@@ -205,10 +209,9 @@ def public(record: Draft) -> None:
         raise ValueError('Anonymous readers can access an unpublished draft or asset')
 
 
-def cleanup(api: GitHubAPI, record: Draft) -> None:
-    """Delete only this run's exact fixture, then recheck the independent record."""
-    identifier = int(os.environ['FIXTURE_ID'])
-    fixture(api, identifier, record)
+def delete_fixture(api: GitHubAPI, record: Draft, identifier: int, tag: str) -> None:
+    """Guard deletion by numeric ID, source, role marker, run and draft state."""
+    fixture(api, identifier, record, tag)
     subprocess.run(  # noqa: S603 - Fixed gh command, endpoint and validated numeric ID.
         ['gh', 'api', '--method', 'DELETE', f'repos/{REPOSITORY}/releases/{identifier}'],
         check=True,
@@ -216,6 +219,23 @@ def cleanup(api: GitHubAPI, record: Draft) -> None:
         timeout=120,
     )
     denied(api, f'repos/{REPOSITORY}/releases/{identifier}', statuses=(HTTPStatus.NOT_FOUND,))
+
+
+def cleanup(api: GitHubAPI, record: Draft) -> None:
+    """Delete a product fixture; prove nonempty independent records survive."""
+    identifier = int(os.environ['FIXTURE_ID'])
+    product = int(os.environ['PRODUCT_FIXTURE_ID'])
+    if product == identifier:
+        raise ValueError('Disposable product and record fixtures must be independent')
+    fixture(api, identifier, record, fixture_tag())
+    delete_fixture(api, record, product, fixture_tag() + '-product')
+    fixture(api, identifier, record, fixture_tag())
+    assets = api.assets_page(identifier, 1)
+    if len(assets) != 1 or assets[0].id != int(os.environ['ASSET_ID']):
+        raise ValueError('Independent fixture history changed after product deletion')
+    if api.download(assets[0].id) != fixture_body().encode():
+        raise ValueError('Independent fixture history bytes changed after product deletion')
+    delete_fixture(api, record, identifier, fixture_tag())
     if snapshot(Storage(api, record)) != os.environ['RECORD_SNAPSHOT']:
         raise ValueError('Administrative history changed after fixture deletion')
 
