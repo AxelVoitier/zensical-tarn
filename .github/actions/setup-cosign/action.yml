@@ -1,7 +1,0 @@
-name: Reviewed Sigstore signer
-description: Install the exact signer using its reviewed binary digest
-runs:
-  using: composite
-  steps:
-    - shell: bash
-      run: bash scripts/release/setup_cosign.sh

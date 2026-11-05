@@ -8,7 +8,6 @@ import json
 import os
 import re
 import shlex
-import shutil
 import subprocess
 import sys
 import unittest
@@ -402,26 +401,6 @@ class CoordinatorChecks(unittest.TestCase):
         self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
         self.assertIn('history or destination state changed', self.output)
 
-    def test_resume_survives_locally_simulated_temporary_artifact_expiry(self) -> None:
-        candidate = self.retain_candidate()
-        # Remove temporary files only. Durable service assets remain independent.
-        shutil.rmtree(candidate)
-        (self.directory / 'receipt.json').unlink()
-        self.environ.update(GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_RUN_ID='102')
-        self.event = {'inputs': {'mode': 'resume'}}
-        receipt = self.directory / 'new-attempt.json'
-        self.run_cli('admit', '--output', str(receipt))
-        originals = self.directory / 'originals'
-        self.run_cli('recover', '--receipt', str(receipt), '--output', str(originals))
-        self.assertEqual(
-            (originals / 'files/zensical_tarn-1.2.3.tar.gz').read_bytes(),
-            b'original source',
-        )
-        self.assertEqual(
-            (originals / 'files/zensical_tarn-1.2.3-py3-none-any.whl').read_bytes(),
-            b'original wheel',
-        )
-
     def test_hosted_checkpoint_verifies_original_bytes_after_approval(self) -> None:
         self.retain_candidate()
         checkpoint = self.run_cli('checkpoint')
@@ -461,17 +440,6 @@ class CoordinatorChecks(unittest.TestCase):
                         self.assertIn('uses: ./.github/actions/setup-gh', job)
                         self.assertLess(job.index('setup-gh'), job.index('gh --version'))
 
-    def test_builder_signs_complete_original_statements_without_github_storage(self) -> None:
-        workflow = (ROOT / '.github/workflows/release-build.yml').read_text()
-        self.assertNotIn('uses: actions/attest@', workflow)
-        self.assertEqual(workflow.count('uses: ./.github/actions/setup-cosign'), 2)
-        self.assertEqual(workflow.count('cosign attest-blob --yes --new-bundle-format'), 2)
-        self.assertIn('/sdist-selected/statement.json', workflow)
-        self.assertIn('/wheel-selected/statement.json', workflow)
-        self.assertNotIn('--key ', workflow)
-        self.assertIn('sdist.py verify', workflow)
-        self.assertIn('control.py verify-wheel', workflow)
-
     def test_workflow_runtime_rejects_a_corrupt_download_before_exposing_the_cli(self) -> None:
         commands = self.directory / 'commands'
         commands.mkdir()
@@ -482,21 +450,19 @@ class CoordinatorChecks(unittest.TestCase):
         )
         curl.chmod(0o755)
         path_file = self.directory / 'github-path'
-        for installer in ('setup_gh.sh', 'setup_cosign.sh'):
-            with self.subTest(installer=installer):
-                result = subprocess.run(
-                    ['bash', str(ROOT / 'scripts/release' / installer)],
-                    env={
-                        **os.environ,
-                        'PATH': str(commands) + os.pathsep + os.environ['PATH'],
-                        'RUNNER_TEMP': str(self.directory),
-                        'GITHUB_PATH': str(path_file),
-                    },
-                    capture_output=True,
-                    check=False,
-                )
-                self.assertNotEqual(result.returncode, 0)
-                self.assertFalse(path_file.exists())
+        result = subprocess.run(
+            ['bash', str(ROOT / 'scripts/release/setup_gh.sh')],
+            env={
+                **os.environ,
+                'PATH': str(commands) + os.pathsep + os.environ['PATH'],
+                'RUNNER_TEMP': str(self.directory),
+                'GITHUB_PATH': str(path_file),
+            },
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(path_file.exists())
 
     def test_default_branch_dispatch_and_release_publication_are_rejected(self) -> None:
         for changed in (

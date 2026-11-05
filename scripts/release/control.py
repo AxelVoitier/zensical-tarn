@@ -35,10 +35,7 @@ from release.sdist import (
 
 
 def select_source(
-    identity: dict[str, object],
-    sdist_id: str,
-    signed_id: str,
-    output: Path,
+    identity: dict[str, object], sdist_id: str, signed_id: str, output: Path
 ) -> tuple[Path, dict[str, str]]:
     """Rehash the raw source and verify its original signed evidence independently."""
     sdist, _ = archive_names(identity)
@@ -125,8 +122,7 @@ def main() -> int:
     """Run a fixed trusted stage from the same frozen source as the builder."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        'stage',
-        choices=['input', 'predicate', 'verify-wheel', 'freeze', 'verify-candidate'],
+        'stage', choices=['input', 'predicate', 'verify-wheel', 'freeze', 'verify-candidate']
     )
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--tag', required=True)
@@ -163,10 +159,7 @@ def main() -> int:
             raise ValueError('Both original source artifact IDs are required')
         args.output.mkdir()
         sdist, source_transfer = select_source(
-            identity,
-            args.sdist_id,
-            args.signed_sdist_id,
-            args.output,
+            identity, args.sdist_id, args.signed_sdist_id, args.output
         )
         if args.stage == 'input':
             set_output('sdist', str(sdist))
@@ -176,22 +169,13 @@ def main() -> int:
             raise ValueError('Original wheel artifact ID is required')
         _, wheel_name = archive_names(identity)
         wheel_transfer = fetch_files(
-            identity,
-            args.wheel_id,
-            'wheel',
-            {wheel_name: ARCHIVE_MAX_BYTES},
-            args.output / 'wheel',
+            identity, args.wheel_id, 'wheel', {wheel_name: ARCHIVE_MAX_BYTES}, args.output / 'wheel'
         )
         wheel = args.output / 'wheel' / wheel_name
         expected = wheel_statement(identity, sdist, wheel, source_transfer, wheel_transfer)
         if args.stage == 'predicate':
-            (args.output / 'statement.json').write_text(
-                json.dumps(expected, sort_keys=True) + '\n',
-                encoding='utf-8',
-            )
             (args.output / 'predicate.json').write_text(
-                json.dumps(expected['predicate'], sort_keys=True) + '\n',
-                encoding='utf-8',
+                json.dumps(expected['predicate'], sort_keys=True) + '\n', encoding='utf-8'
             )
             set_output('archive', str(wheel))
         elif args.stage == 'verify-wheel':

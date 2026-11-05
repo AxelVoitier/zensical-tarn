@@ -75,6 +75,7 @@ jobs:
       contents: read
       actions: read # Read and verify the producer's exact artifact via the platform API.
       id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -100,15 +101,12 @@ jobs:
           python -I scripts/release/sdist.py predicate --root .
           --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE"
           --artifact-id "$ARTIFACT_ID" --output "$RUNNER_TEMP/sdist-selected"
-      - uses: ./.github/actions/setup-cosign
-      - name: Sign the complete original source statement with Sigstore
+      - uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
         id: signed
-        env:
-          STATEMENT: ${{ runner.temp }}/sdist-selected/statement.json
-          BUNDLE: ${{ runner.temp }}/sdist-bundle.sigstore.json
-        run: |
-          cosign attest-blob --yes --new-bundle-format --statement "$STATEMENT" --bundle "$BUNDLE"
-          printf 'bundle-path=%s\n' "$BUNDLE" >> "$GITHUB_OUTPUT"
+        with:
+          subject-path: ${{ steps.selected.outputs.archive }}
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/sdist-selected/predicate.json
       - name: Verify original bundle against independent source and transfer policy
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,6 +190,7 @@ jobs:
       contents: read
       actions: read
       id-token: write
+      attestations: write
     outputs:
       artifact-id: ${{ steps.retained.outputs.artifact-id }}
     steps:
@@ -218,15 +217,12 @@ jobs:
           SIGNED_SDIST_ID: ${{ needs.attest-sdist.outputs.artifact-id }}
           WHEEL_ID: ${{ needs.wheel.outputs.artifact-id }}
         run: python -I scripts/release/control.py predicate --root . --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --tag-ref-target "$TAG_REF_TARGET" --tag-ref-type "$TAG_REF_TYPE" --sdist-id "$SDIST_ID" --signed-sdist-id "$SIGNED_SDIST_ID" --wheel-id "$WHEEL_ID" --output "$RUNNER_TEMP/wheel-selected"
-      - uses: ./.github/actions/setup-cosign
-      - name: Sign the complete original wheel statement with Sigstore
+      - uses: actions/attest@c32b4b8b198b65d0bd9d63490e847ff7b53989d4 # v4.0.0
         id: signed
-        env:
-          STATEMENT: ${{ runner.temp }}/wheel-selected/statement.json
-          BUNDLE: ${{ runner.temp }}/wheel-bundle.sigstore.json
-        run: |
-          cosign attest-blob --yes --new-bundle-format --statement "$STATEMENT" --bundle "$BUNDLE"
-          printf 'bundle-path=%s\n' "$BUNDLE" >> "$GITHUB_OUTPUT"
+        with:
+          subject-path: ${{ steps.selected.outputs.archive }}
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/wheel-selected/predicate.json
       - name: Verify the original wheel bundle against independently selected inputs
         env:
           GH_TOKEN: ${{ github.token }}

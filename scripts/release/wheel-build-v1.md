@@ -2,7 +2,7 @@
 
 This build type describes the fixed wheel stage in `release-build.yml`.
 The reusable builder and its caller use the same frozen product-tag commit.
-The coordinator admits the frozen tag before calling this workflow.
+The coordinator remains disconnected until its orchestration work is complete.
 No hosted execution or SLSA level is established by local fixtures.
 
 The unprivileged `wheel` job receives artifact IDs from the workflow dependency graph.
@@ -23,10 +23,8 @@ A fresh `attest-wheel` job independently retrieves both original archives.
 It repeats the source selection and signature checks and hashes the selected wheel.
 It executes trusted helpers and pinned actions without package hooks or restored caches.
 Its permissions allow source/artifact reads and signing, with no publisher environment.
-Python, Hatch, GitHub CLI and Cosign pins match the source archive build profile.
-Cosign signs the complete trusted statement and returns its original Sigstore bundle.
-This avoids GitHub's storage restriction on custom SLSA build types.
-The verifier still checks the original signature, certificate identity and complete statement.
+Python, Hatch and GitHub CLI pins match the source archive build profile.
+The hosted availability and isolation of those runtimes remain untested.
 
 The wheel statement has exactly one wheel filename and SHA-256 subject.
 Its protected source, builder and toolchain identities match the source statement.

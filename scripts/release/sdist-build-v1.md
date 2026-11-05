@@ -4,7 +4,7 @@ This build type identifies the source archive stage in `release-build.yml`.
 The coordinator must call that reusable workflow through a local workflow reference.
 Both workflows and the trusted helpers come from the same reviewed product tag commit.
 The trusted caller supplies the frozen tag ref target OID and its type as required inputs.
-The coordinator admits the frozen tag before calling this workflow.
+The workflow is not yet connected to the coordinator.
 
 The unprivileged job invokes `build_sdist` from `prepare_release.py`.
 That shared function checks the clean tagged source and installed release tools.
@@ -14,13 +14,13 @@ The release dependency group pins the backend tools.
 The workflow pins Python 3.12.12 and Hatch 1.18.1.
 
 A fresh signing job receives only the source archive through an identified artifact.
-It runs trusted helpers and pinned tools on `ubuntu-24.04`, without restored caches.
-It has read access to source and artifacts, plus OIDC signing authority.
+It runs trusted helpers and pinned actions on `ubuntu-24.04`, without restored caches.
+It has read access to source and artifacts, plus signing and attestation authority.
 It has no publisher environment or package execution step.
 Checkout credentials are not persisted in either job.
-The signer uses Python 3.12.12, GitHub CLI 2.99.0 and Cosign 3.1.4.
-Installers check fixed SHA-256 digests before exposing downloaded tools.
-Version checks reject an unexpected installed runtime.
+The signer uses Python 3.12.12 and requires GitHub CLI 2.99.0.
+If the runner supplies another CLI version, the job stops.
+Availability of these runtimes on the hosted runner remains untested.
 
 The helper checks repository, tag, commit and coordinating workflow against platform context.
 It reads the source tree, timestamp, tag target and target type through Git.
@@ -43,12 +43,7 @@ Its external parameters record the frozen source, workflow and toolchain identit
 Its internal parameters retain producer run, attempt, artifact and transport identities.
 Its resolved dependency is the tagged source commit.
 The archive SHA-256 identifies package bytes independently of the transport digest.
-Cosign signs the complete statement produced by the trusted helper.
-That statement retains the selected archive as its sole subject.
-The Sigstore bundle includes the original signed payload, certificate and transparency evidence.
-GitHub's attestation storage API rejects this custom SLSA build type.
-Direct Sigstore signing preserves the original statement and its independent verification policy.
-The workflow retains the bundle through its selected artifact and recovery storage.
+The action signs the helper's predicate with the selected archive as its sole subject.
 No caller predicate, command, helper path or secret input is accepted.
 
 After signing, the helper downloads and checks the producer artifact again.
