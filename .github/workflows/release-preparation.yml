@@ -206,6 +206,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Bind original files and live state before the approval wait
         id: checkpoint
         env:
@@ -240,6 +242,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - name: Require the reviewed verifier runtime
+        run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Recheck original source, history, files and destinations after approval
         env:
           GH_TOKEN: ${{ github.token }}
