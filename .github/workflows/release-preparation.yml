@@ -222,8 +222,55 @@ jobs:
       tag-ref-type: ${{ needs.resolve.outputs.tag-ref-type }}
       retrieved-testpypi: true
 
+  review:
+    needs: [resolve, verify-testpypi]
+    # No hosted receipt/approval adapter is enabled in local Stage B.
+    if: false && needs.verify-testpypi.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Refuse hosted review until authenticated check and summary transport is reviewed
+        run: >-
+          python -I scripts/release/coordinator.py review --uploads-disabled --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID"
+
+  publish-pypi:
+    needs: [resolve, review]
+    # Environment reviewers must be configured and proved under separate authority.
+    # This declaration alone does not enforce explicit production approval.
+    if: false && needs.review.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Refuse hosted publication until exact-summary approval transport is reviewed
+        run: >-
+          python -I scripts/release/coordinator.py publish-pypi --uploads-disabled --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID"
+
   report:
-    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi]
+    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi, review, publish-pypi]
     if: always() && needs.resolve.outputs.head != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10

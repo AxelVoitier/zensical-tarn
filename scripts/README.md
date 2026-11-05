@@ -611,3 +611,54 @@ No successful local fixture result proves registry compatibility, publisher conf
 hatch run check:python -m unittest discover -s tests -p test_testpypi.py -v
 hatch run typing:check scripts/release scripts/check_testpypi.py tests/test_testpypi.py
 ```
+
+## Candidate-bound production approval
+
+`release/approval.py` provides the local review and production simulation interfaces.
+It has no live approval, check-receipt or registry adapter.
+The coordinator's `review` and `publish-pypi` commands always refuse hosted execution.
+The matching workflow jobs retain literal false gates.
+The `pypi` environment declaration marks the intended approval boundary.
+Environment reviewers, access and sole-maintainer approval still need separate configuration and hosted proof.
+
+Call `prepare_review(reconciler, testpypi, pypi, read)` under the admitted attempt and shared queue.
+The trusted `read()` adapter returns `ReviewMaterial` with fresh source identity, the frozen changelog and authenticated check receipts.
+Read the changelog from the frozen commit, rather than a working file or dispatch input.
+Each `CheckResult` binds a passing result to the candidate digest, source digest, producer execution and retained evidence digest.
+The four required receipts cover preparation, independent reproduction, archive checks and TestPyPI installation.
+Archive checks include the required matrix, browser and package checks.
+The installation receipt covers the exact retrieved TestPyPI wheel and its site checks.
+The adapter must authenticate producer jobs and retrieve the evidence by its digest.
+A caller-provided `pass` value does not establish that a hosted check passed.
+The local tests supply controlled service and verifier responses at these boundaries.
+
+The helper recovers and verifies originals, reads both destinations and requires complete TestPyPI bytes and both evidence types.
+It rejects uncertain PyPI observations and missing, empty or ambiguous version changelog sections.
+Supported headings are `## [VERSION]` or `## VERSION`, optionally followed by ` - YYYY-MM-DD`.
+It retains one canonical JSON review summary and its digest in private history.
+The summary includes the manifest, frozen source/workflow/builder, original evidence, check receipts, history head and current execution.
+It also includes the full changelog section, complete proposed notes, public asset set and report format.
+PyPI verification remains pending at this point.
+Prereleases retain every prerequisite and record `make_latest: false` for finalisation.
+The summary is private operational evidence and must not become a public asset.
+
+After an authenticated approval gate, call `publish_production(...)` with the exact summary bytes and an `Approval` for their digest and execution.
+`Approval` is a local gate-result fixture type. Constructing it does not prove a human approved a hosted job.
+The helper requires the current history head to select that exact review.
+It rechecks source, originals, checks, notes and both destinations before accepting approval.
+It then reconciles only missing original PyPI files through the existing bounded recovery policy.
+A final retrieval must verify archive bytes and both evidence types before a `production-verified` event permits GitHub finalisation.
+GitHub publication itself belongs to the separate finalisation stage.
+
+If a check fails or reviewed state changes, stop and inspect the private history.
+Approval does not permit replacement builds, changed claims or evidence bypasses.
+An explicit resume that still needs PyPI uploads requires a fresh review and approval for its current execution and observations.
+A cancelled upload retains its intent. Resume checks accepted files and sends only verified missing originals.
+A stale approval, unavailable original or conflicting destination blocks advancement.
+Missing final evidence leaves production incomplete and blocks GitHub finalisation.
+GitHub-only recovery is handled separately, under the unchanged-content policy.
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_approval.py -v
+hatch run typing:check scripts/release tests/test_approval.py
+```

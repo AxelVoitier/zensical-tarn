@@ -415,3 +415,27 @@ by this procedure.
 
 The metadata format follows the
 [Python Packaging User Guide](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/#license-and-license-files).
+
+## Review and production approval under the new coordinator
+
+The local implementation prepares one private review summary for an exact candidate and workflow execution.
+Review its candidate digest, frozen tag/commit, workflow/builder revision, archive names and hashes, and original signed evidence.
+Make sure that preparation, reproduction, archive checks and TestPyPI installation pass for those exact files.
+Review the full tagged-version changelog, complete proposed public notes, attachment set and public report format.
+Missing or ambiguous changelog text blocks review. Correct it under the existing source and version rules.
+The review records PyPI verification as pending because that verification follows production publication.
+
+Production approval covers the reviewed summary and that execution.
+After approval, the helper rechecks the tag, originals, history, checks, notes and destination observations.
+Changed state blocks advancement. Approval never permits substitution or rebuilding.
+A deliberate resume that still needs any PyPI upload requires a fresh summary and fresh production approval.
+The resumed path uses retained originals and uploads only missing files.
+It retrieves PyPI bytes and both evidence types before recording production verification.
+Until that succeeds, GitHub finalisation stays blocked.
+Prereleases follow the same requirements and leave the latest stable release unchanged.
+
+The `pypi` workflow environment is an intended approval boundary, not proof of configured protection.
+Both new jobs and hosted commands remain disabled.
+Actual environment enforcement, authenticated check and approval transport, publishing adapters and production verification remain pending separately authorised work.
+Local scenarios prove rejection and recovery policy only.
+For the trusted interfaces and failure meanings, read [Candidate-bound production approval](scripts/README.md#candidate-bound-production-approval).

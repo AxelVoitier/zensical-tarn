@@ -185,12 +185,14 @@ class Reconciler:
             else 'uncertain'
         )
 
-    def observe(
+    def observe(  # noqa: PLR0912 - Validate every observed component before recording.
         self,
         destinations: Mapping[str, Destination],
         publishers: Mapping[str, Publisher],
         files: Path,
         deadline: float,
+        *,
+        retain_observation: bool = True,
     ) -> tuple[dict[str, object], dict[str, Mapping[str, RemoteFile]]]:
         """Keep screened per-component digests and validate monotonic observations."""
         summary: dict[str, object] = {}
@@ -251,7 +253,8 @@ class Reconciler:
                             raise ReconciliationError(
                                 'Previously observed bytes or evidence changed',
                             )
-        self.record('destination-observed', {'files': summary})
+        if retain_observation:
+            self.record('destination-observed', {'files': summary})
         return summary, snapshots
 
     def check_policy(

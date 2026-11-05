@@ -554,7 +554,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         'stage',
-        choices=['admit', 'guard', 'recover', 'retain', 'report', 'testpypi'],
+        choices=[
+            'admit',
+            'guard',
+            'recover',
+            'retain',
+            'report',
+            'testpypi',
+            'review',
+            'publish-pypi',
+        ],
     )
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--admin-id', required=True, type=int)
@@ -574,6 +583,13 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
+        if args.stage in ('review', 'publish-pypi'):
+            raise ValueError(
+                'Hosted production approval and uploads are disabled. '
+                'Use the controlled approval API for local acceptance; '
+                'authenticated check receipts, environment controls and registry adapters '
+                'need separate implementation and hosted proof.',
+            )
         if args.stage == 'testpypi':
             raise ValueError(
                 'Hosted TestPyPI uploads are disabled. Use the controlled publication API '

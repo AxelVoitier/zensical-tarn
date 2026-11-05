@@ -53,7 +53,7 @@ def publish(
     if result.status != 'complete':
         return result
     try:
-        return _retrieve(reconciler, destination, publisher, output, deadline)
+        return retrieve(reconciler, destination, publisher, output, deadline)
     except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
         reason = (
             'Final TestPyPI retrieval incomplete; verify originals '
@@ -63,12 +63,14 @@ def publish(
         return Outcome('incomplete', reason)
 
 
-def _retrieve(
+def retrieve(
     reconciler: Reconciler,
     destination: Destination,
     publisher: Publisher,
     output: Path,
     deadline: float,
+    *,
+    target: str = 'testpypi',
 ) -> Outcome:
     """Export only a freshly verified snapshot; conflicting or delayed retrieval stops."""
     with TemporaryDirectory(dir=output.parent) as directory:
@@ -76,12 +78,12 @@ def _retrieve(
         originals = staging / 'originals'
         reconciler.storage.recover(reconciler.retained, reconciler.source, originals)
         _summary, snapshots = reconciler.observe(
-            {'testpypi': destination},
-            {'testpypi': publisher},
+            {target: destination},
+            {target: publisher},
             originals / 'files',
             deadline,
         )
-        snapshot = snapshots.get('testpypi', {})
+        snapshot = snapshots.get(target, {})
         names = archive_names(reconciler.source)
         if set(snapshot) != set(names) or any(
             any(item is None for item in (remote.archive, remote.build, remote.publish))
@@ -114,11 +116,11 @@ def _retrieve(
         )
         if output.exists():
             raise ValueError('Retrieved output appeared during selection')
-        reconciler.record('testpypi-retrieved', {'candidate': reconciler.retained.candidate})
+        reconciler.record(target + '-retrieved', {'candidate': reconciler.retained.candidate})
         selected.rename(output)
     return Outcome(
         'complete',
-        'TestPyPI bytes and both evidence types retrieved and verified',
+        f'{target} bytes and both evidence types retrieved and verified',
     )
 
 

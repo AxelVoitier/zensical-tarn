@@ -318,7 +318,7 @@ class WorkflowBoundaryChecks(unittest.TestCase):
         self.assertNotIn('pip install', publisher)
         self.assertIn('--uploads-disabled', publisher)
         self.assertIn('needs: [resolve, retain, resume]', publisher)
-        consumer = workflow.split('  verify-testpypi:', 1)[1].split('  report:', 1)[0]
+        consumer = workflow.split('  verify-testpypi:', 1)[1].split('  review:', 1)[0]
         self.assertIn('retrieved-testpypi: true', consumer)
         self.assertNotIn('id-token: write', consumer)
         self.assertNotIn('contents: write', consumer)
