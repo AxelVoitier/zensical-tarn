@@ -24,7 +24,7 @@ BUILDER = '.github/workflows/release-build.yml'
 SDIST_MAX_BYTES = 1_048_576
 TRANSPORT_MAX_BYTES = 2_097_152
 VERSION = re.compile(
-    r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?(?:\.post(?:0|[1-9][0-9]*))?'
+    r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?(?:\.post(?:0|[1-9][0-9]*))?',
 )
 
 
@@ -90,6 +90,7 @@ def source_identity(
             'python': '3.12.12',
             'hatch': '1.18.1',
             'gh': '2.99.0',
+            'cosign': '3.1.4',
             'runner': 'ubuntu-24.04',
         },
     }
@@ -125,7 +126,7 @@ def select_files(
             producer.get('head_sha') != commit,
             producer.get('repository_id') != int(repository_id),
             producer.get('head_repository_id') != int(repository_id),
-        )
+        ),
     ):
         raise ValueError('Unexpected artifact producer identity')
     digest = 'sha256:' + hashlib.sha256(data).hexdigest()
@@ -190,7 +191,9 @@ BUILD_TYPE = (
 
 
 def statement(
-    identity: Mapping[str, object], archive: Path, transport: Mapping[str, str]
+    identity: Mapping[str, object],
+    archive: Path,
+    transport: Mapping[str, str],
 ) -> dict[str, object]:
     """Construct one SLSA subject and its protected inputs from trusted selection."""
     if archive.name != f'zensical_tarn-{identity["version"]}.tar.gz' or archive.is_symlink():
@@ -202,7 +205,7 @@ def statement(
             {
                 'name': archive.name,
                 'digest': {'sha256': hashlib.sha256(archive.read_bytes()).hexdigest()},
-            }
+            },
         ],
         'predicate': {
             'buildDefinition': {
@@ -213,15 +216,15 @@ def statement(
                     {
                         'uri': f'git+https://github.com/{REPOSITORY}@refs/tags/{identity["tag"]}',
                         'digest': {'gitCommit': identity['commit']},
-                    }
+                    },
                 ],
             },
             'runDetails': {
                 'builder': {
-                    'id': f'https://github.com/{REPOSITORY}/{BUILDER}@{identity["commit"]}'
+                    'id': f'https://github.com/{REPOSITORY}/{BUILDER}@{identity["commit"]}',
                 },
                 'metadata': {
-                    'invocationId': f'https://github.com/{REPOSITORY}/actions/runs/{transport["run_id"]}/attempts/{transport["run_attempt"]}'
+                    'invocationId': f'https://github.com/{REPOSITORY}/actions/runs/{transport["run_id"]}/attempts/{transport["run_attempt"]}',
                 },
             },
         },
@@ -323,7 +326,9 @@ def fetch_files(
 ) -> dict[str, str]:
     """Read the exact platform artifact and independently verify its envelope."""
     run, attempt, repository_id = platform_context(
-        os.environ, str(identity['tag']), str(identity['commit'])
+        os.environ,
+        str(identity['tag']),
+        str(identity['commit']),
     )
     if not re.fullmatch(r'[1-9][0-9]*', artifact_id):
         raise ValueError('Invalid artifact ID')
@@ -355,7 +360,9 @@ def fetch_files(
 
 
 def fetch_selected(
-    identity: Mapping[str, object], artifact_id: str, output: Path
+    identity: Mapping[str, object],
+    artifact_id: str,
+    output: Path,
 ) -> tuple[Path, dict[str, str]]:
     """Read and independently verify the selected source artifact."""
     name = f'zensical_tarn-{identity["version"]}.tar.gz'
@@ -398,8 +405,13 @@ def main() -> int:
             verify_bundle(archive, args.bundle, identity, transport)
         else:
             expected = statement(identity, archive, transport)
+            (args.output / 'statement.json').write_text(
+                json.dumps(expected, sort_keys=True) + '\n',
+                encoding='utf-8',
+            )
             (args.output / 'predicate.json').write_text(
-                json.dumps(expected['predicate'], sort_keys=True) + '\n', encoding='utf-8'
+                json.dumps(expected['predicate'], sort_keys=True) + '\n',
+                encoding='utf-8',
             )
             (args.output / 'selection.json').write_text(
                 json.dumps(

@@ -572,6 +572,14 @@ Hosted verifier jobs install GitHub CLI 2.99.0 through `.github/actions/setup-gh
 The installer checks a fixed SHA-256 digest before extracting the official Linux amd64 archive.
 It checks the installed version before adding the binary directory to the job path.
 The runner image can supply a newer CLI without changing the selected verifier.
+
+Isolated signing jobs install Cosign 3.1.4 through `.github/actions/setup-cosign`.
+Its installer checks the fixed binary digest and version before exposing the signer.
+Cosign signs the complete source or wheel statement with the job's OIDC identity.
+The original Sigstore bundle retains the signature, certificate and transparency evidence.
+GitHub's attestation storage API rejects the custom SLSA build types used here.
+The build artifacts and durable recovery storage retain these original bundles instead.
+The existing verifier checks the certificate identity and every protected statement field.
 There is no automatic replacement of administrative storage.
 
 The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and
