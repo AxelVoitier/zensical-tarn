@@ -301,7 +301,8 @@ class ApprovalChecks(unittest.TestCase):
             prepare_review(self.reconciler, self.fixture.destination, self.production, unstable)
         self.assertEqual(self.production.writes, [])
 
-    def test_prerelease_review_preserves_latest_stable_and_all_prerequisites(self) -> None:
+    def prerelease_review(self) -> bytes:
+        """Prepare a real retained prerelease candidate for controlled-service tests."""
         fixture = self.fixture
         source = {**fixture.source, 'version': '1.2.3rc1', 'tag': 'v1.2.3rc1'}
         files = fixture.root / 'rc-files'
@@ -378,7 +379,17 @@ class ApprovalChecks(unittest.TestCase):
                 for name, check in self.material.checks.items()
             },
         )
-        review = json.loads(prepare_review(reconciler, testpypi, production, lambda: material))
+        self.reconciler = reconciler
+        self.production = production
+        self.material = material
+        self.fixture.service = service
+        self.fixture.storage = storage
+        self.fixture.retained = retained
+        self.fixture.destination = testpypi
+        return prepare_review(reconciler, testpypi, production, self.read)
+
+    def test_prerelease_review_preserves_latest_stable_and_all_prerequisites(self) -> None:
+        review = json.loads(self.prerelease_review())
         self.assertTrue(review['prerelease'])
         self.assertEqual(review['make_latest'], 'false')
         self.assertEqual(len(review['checks']), 4)
@@ -406,7 +417,7 @@ class HostedBoundaryChecks(unittest.TestCase):
 
     def test_production_environment_is_isolated_and_hard_disabled(self) -> None:
         workflow = (ROOT / '.github/workflows/release-preparation.yml').read_text()
-        production = workflow.split('  publish-pypi:', 1)[1].split('  report:', 1)[0]
+        production = workflow.split('  publish-pypi:', 1)[1].split('  finalise:', 1)[0]
         self.assertIn('environment: pypi', production)
         self.assertIn('false &&', production)
         self.assertIn('needs: [resolve, review]', production)

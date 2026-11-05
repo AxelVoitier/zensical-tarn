@@ -169,6 +169,7 @@ def review_snapshot(
             *names,
             'sdist.sigstore.json',
             'wheel.sigstore.json',
+            'candidate.json',
             'SHA256SUMS',
             'verification-report.json',
             *(name + '.publish.json' for name in names),

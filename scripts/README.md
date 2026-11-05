@@ -662,3 +662,68 @@ GitHub-only recovery is handled separately, under the unchanged-content policy.
 hatch run check:python -m unittest discover -s tests -p test_approval.py -v
 hatch run typing:check scripts/release tests/test_approval.py
 ```
+
+## Approved GitHub finalisation and recovery
+
+`release/finalisation.py` provides `finalise(reconciler, pypi, read, summary, github)`.
+Run it only inside the admitted attempt and shared queue.
+It consumes the original private summary retained before production approval.
+It requires matching approval and production-verification events in private history.
+It reads the frozen source and changelog through the trusted `ReviewMaterial` adapter.
+It then recovers original archives and verifies current PyPI bytes and both evidence types.
+It performs no package execution, build, signing or PyPI upload.
+
+`GitHubDestination` is a trusted, ID-bound service interface for local tests.
+Its `observe` returns complete release metadata and downloaded asset bytes.
+A hosted adapter must follow every page and reject duplicate names, IDs and incomplete transfers.
+It must enforce the supplied monotonic deadline on all requests.
+Its `attach` operation adds missing assets without replacement.
+Its `publish` operation changes only approved notes, draft status, prerelease and latest settings.
+Platform restrictions must stop these operations.
+The interface offers no delete, overwrite, tag movement or protection bypass.
+No live adapter is installed. The CLI always refuses `finalise`, even without `--uploads-disabled`.
+The workflow job also has a literal false gate and no package execution or publishing OIDC.
+Hosted routing for normal and deliberate recovery paths remains an implementation obligation before activation.
+
+The helper compares the intended asset names with the approved summary.
+The existing public-safe `candidate.json` remains attached and is included in that review.
+The final asset set also contains original archives, original build bundles, per-file PyPI publishing bundles,
+`SHA256SUMS` and `verification-report.json`.
+It records exact public asset digests, notes, settings and report contents in a private `github-prepared` event.
+The public report includes frozen source/workflow/builder identities, archive and evidence digests,
+passing check receipts and selected technical attempt outcomes.
+It projects named fields and fixed event kinds instead of copying private event details.
+Known private fields and credential forms in public JSON or notes stop publication.
+This screen cannot recognise arbitrary private prose. Trusted evidence adapters must screen supported formats too.
+Never attach the private review summary, operational events or raw logs.
+
+Before each attachment, the helper reads current release identity and contents again.
+Unexpected assets, changed bytes, wrong notes or conflicting public settings stop recovery.
+It checks the complete asset set and source again before publication.
+After publication, it reads back release identity, notes, assets, prerelease and latest settings.
+Only a verified public result permits `github-complete` in independent private history.
+A lost response or failed read-back leaves `incomplete`, even if the write reached GitHub.
+Screened failure records omit exception text and raw service responses.
+If private storage is unavailable, the result also states that failure retention is unverified.
+
+A deliberate GitHub-only recovery accepts a new attempt without fresh production approval.
+It still requires the same approved summary, recoverable originals and complete current PyPI verification.
+It restores only missing approved assets or publishes the unchanged prepared release.
+The first public report remains byte-for-byte fixed across recovery.
+It includes technical history available when the finalisation plan was retained.
+Later recovery outcomes remain in complete private history, without rewriting public assets.
+Missing retained originals, changed source, conflicts and unsupported immutable-release repairs stop recovery.
+Actual immutable-release operations and latest-stable behaviour require separately authorised hosted proof.
+
+Run the local checks with external writes disabled:
+
+```bash
+hatch run check:python -m unittest discover -s tests -p test_finalisation.py -v
+hatch run typing:check
+hatch run check:all
+```
+
+The destination, clock and external signature-verifier responses are fixtures.
+These checks establish local policy behaviour only.
+For maintainer decisions and consumer instructions, see
+[Final GitHub publication and recovery](../RELEASING.md#final-github-publication-and-recovery).

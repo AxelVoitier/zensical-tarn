@@ -41,7 +41,7 @@ Do not execute it until setup and remote tests are authorised.
 Resume retrieves and verifies originals and history without building archives or regenerating build evidence.
 It does not depend on ordinary reruns or temporary Actions artifacts.
 Future PyPI uploads on resume still require fresh production approval.
-Approval and publication jobs belong to the later implementation stages.
+Approval and publication helpers have local tests. Their hosted adapters remain disabled.
 
 Recovery does not depend on the final reporting job.
 If cancellation interrupts the history append, resume can reconcile a complete verified storage copy.
@@ -439,3 +439,97 @@ Both new jobs and hosted commands remain disabled.
 Actual environment enforcement, authenticated check and approval transport, publishing adapters and production verification remain pending separately authorised work.
 Local scenarios prove rejection and recovery policy only.
 For the trusted interfaces and failure meanings, read [Candidate-bound production approval](scripts/README.md#candidate-bound-production-approval).
+
+## Final GitHub publication and recovery
+
+The local helper finalises an approved candidate after complete PyPI verification.
+Live publication remains disabled. Repository protection, publisher identities and actual immutable-release operations still require hosted proof.
+Do not treat a passing local simulation as permission to publish.
+The intended website tag route, production gate and original-tag recovery command remain as described above.
+The earlier manual token-upload procedure does not provide the new coordinator's evidence guarantees.
+
+Before production approval, review the full notes, public asset names and report format in the private summary.
+The public asset set includes the original `candidate.json`, archives, build bundles and per-file publishing bundles.
+It also includes `SHA256SUMS` and `verification-report.json`.
+The helper fills final results from verified production retrieval without editing approved changelog claims.
+Private review summaries, approval details and raw logs stay in the separate administrative draft.
+That draft must remain private after success.
+
+If final publication stops, read the private outcome and current destination state.
+An `incomplete` result does not prove that the last write failed.
+A lost response can follow a successful attachment or publication.
+Use a deliberate resume from the original tag after inspecting that state.
+When PyPI is complete, unchanged GitHub-only recovery needs no fresh production approval.
+When any PyPI upload remains, prepare a fresh summary and obtain fresh approval.
+Both paths require the original source, files, evidence, notes and approved asset set.
+
+GitHub-only recovery adds missing approved content and verifies it again.
+It never replaces conflicting assets or edits an existing public report.
+If a platform protection blocks the operation, stop with an incomplete result.
+A supported remedy needs an explicit maintainer decision.
+There is no immutability bypass or emergency replacement path.
+If retained original archives or required build evidence are lost, use a new version for a fresh build.
+For helper contracts and local validation, read
+[Approved GitHub finalisation and recovery](scripts/README.md#approved-github-finalisation-and-recovery).
+
+## Verify downloads from PyPI or GitHub
+
+These instructions describe the intended evidence-bearing releases.
+The existing `1.0.0` release is outside this implementation and does not acquire these guarantees retroactively.
+A hash comparison proves file equality with the report you selected.
+Signed evidence also needs a trusted verifier and an independently selected identity policy.
+No SLSA build level is claimed by the local implementation.
+
+Choose the intended version and its source commit independently.
+Download `candidate.json`, `SHA256SUMS`, `verification-report.json`, both build bundles and both publishing bundles from that GitHub release.
+Keep them in a new directory with the archives.
+Read the report's source, workflow and builder revisions, check receipts, evidence references and technical outcomes.
+The public report is fixed at finalisation. Complete later operational history remains private.
+
+For PyPI archives, download the wheel with `python -m pip download` using explicit PyPI selection:
+
+```bash
+python -m pip download --index-url https://pypi.org/simple/ --no-deps --only-binary=:all: --dest downloaded "zensical-tarn==VERSION"
+```
+
+Replace `VERSION` with the selected version before running the command.
+Download the source archive from that version's PyPI file listing as well.
+Retrieve both attestation types for each file from PyPI's provenance links.
+Use the publishing and build identities recorded for the frozen coordinator and builder.
+Compare the registry evidence with the attached original signed build statements.
+Envelope conversion must preserve the original signed statement bytes.
+A missing file, evidence type or signed source-archive relationship blocks verification.
+Hosted evidence retrieval and identity verification remain unproven until the authorised registry tests.
+
+For GitHub archives, download the named `.tar.gz` and `.whl` release assets.
+GitHub's automatically generated source snapshots are separate from the release sdist.
+Calculate each archive's SHA-256 hash:
+
+```bash
+python -m pip hash downloaded/ARCHIVE_FILENAME
+```
+
+Replace `ARCHIVE_FILENAME` with each downloaded archive's name.
+Compare the results with `SHA256SUMS` and the archive entries in `candidate.json` and the public report.
+Both download locations must supply the same archive bytes.
+Verify each original build bundle against the independently selected repository, frozen workflow and builder revision.
+The wheel's signed statement must identify the exact sdist digest as its input.
+Verify the per-file publishing evidence against the intended PyPI publisher and exact archive subject.
+Until a consumer verifier and actual identities are proved, do not treat a digest comparison alone as signed-evidence verification.
+
+For the build bundles, use the same GitHub CLI policy as the release helper.
+Install the recorded GitHub CLI version before running this command.
+Replace `ARCHIVE`, `BUNDLE`, `COMMIT` and `VERSION` with your selected file, original build bundle,
+independently selected source commit and version respectively:
+
+```bash
+gh attestation verify ARCHIVE --bundle BUNDLE --repo AxelVoitier/zensical-tarn --signer-workflow AxelVoitier/zensical-tarn/.github/workflows/release-build.yml --signer-digest COMMIT --source-digest COMMIT --source-ref refs/tags/vVERSION --deny-self-hosted-runners --predicate-type https://slsa.dev/provenance/v1 --format json
+```
+
+Run it once for the sdist and once for the wheel from either download location.
+Both commands must exit successfully and return one verified statement for the expected archive subject.
+Inspect the wheel statement's `predicate.buildDefinition.resolvedDependencies` for the exact sdist name and SHA-256 digest.
+The helper also compares the signed workflow inputs and controlled transfer identities with `candidate.json`.
+The command alone does not perform those additional comparisons or verify publishing evidence.
+A proven consumer command for the eventual PyPI publishing envelope remains part of the hosted compatibility work.
+Until that command and policy are proved, the complete signed-evidence consumer procedure remains blocked.

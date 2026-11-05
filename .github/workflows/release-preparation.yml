@@ -269,8 +269,30 @@ jobs:
           --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
           --repository-id "$REPOSITORY_ID"
 
+  finalise:
+    needs: [resolve, publish-pypi]
+    # No live release-write adapter or immutability proof exists in local Stage B.
+    if: false && needs.publish-pypi.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Refuse hosted finalisation until approved-content transport and protections are proved
+        run: >-
+          python -I scripts/release/coordinator.py finalise --uploads-disabled --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID"
+
   report:
-    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi, review, publish-pypi]
+    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi, review, publish-pypi, finalise]
     if: always() && needs.resolve.outputs.head != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10

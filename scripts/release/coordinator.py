@@ -563,6 +563,7 @@ def main() -> int:
             'testpypi',
             'review',
             'publish-pypi',
+            'finalise',
         ],
     )
     parser.add_argument('--root', required=True, type=Path)
@@ -583,6 +584,12 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
+        if args.stage == 'finalise':
+            raise ValueError(
+                'Hosted GitHub finalisation is disabled. Use the controlled finalisation API '
+                'for local acceptance; actual release protection and write adapters need '
+                'separately authorised implementation and hosted proof.',
+            )
         if args.stage in ('review', 'publish-pypi'):
             raise ValueError(
                 'Hosted production approval and uploads are disabled. '

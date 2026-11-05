@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from release.candidate import (
     ARCHIVE_MAX_BYTES,
@@ -181,7 +181,14 @@ class Storage:
         ):
             raise ValueError('Invalid storage role or repository identity')
         actual = self.api.release(expected.id)
-        if actual != Release(expected.id, expected.tag, expected.target, expected.body, draft=True):
+        plan = self.finalisation_plan(expected) if expected.role == 'product' else None
+        allowed = [Release(expected.id, expected.tag, expected.target, expected.body, draft=True)]
+        if plan is not None:
+            allowed.extend(
+                Release(expected.id, expected.tag, expected.target, str(plan['notes']), draft=state)
+                for state in (True, False)
+            )
+        if actual not in allowed:
             raise ValueError('Storage identity changed or unexpectedly public')
         if self.api.tag_identity(expected.tag)[2] != expected.target:
             raise ValueError('Storage tag target changed')
@@ -196,6 +203,20 @@ class Storage:
             page += 1
         if matching != [expected.id]:
             raise ValueError('Missing or duplicated storage identity')
+
+    def finalisation_plan(self, product: Draft) -> dict[str, object] | None:
+        """Read the retained, candidate-bound public plan from independent private history."""
+        plans = [
+            record.event.details
+            for record in self.history(product.tag[1:])
+            if record.event.kind == 'github-prepared'
+            and record.event.source == product.target
+            and record.event.details.get('product_id') == product.id
+            and record.event.candidate == record.event.details.get('candidate')
+        ]
+        if len(plans) > 1:
+            raise ValueError('Conflicting finalisation plans')
+        return plans[0] if plans else None
 
     def assets(self, draft: Draft) -> list[Asset]:
         """Enumerate every page and reject duplicate names or IDs."""
@@ -384,9 +405,19 @@ class Storage:
         if set(retained.assets) != names | {'candidate.json'}:
             raise ValueError('Missing retained original identities')
         actual = {asset.name: asset for asset in self.assets(retained.product)}
-        if actual != retained.assets:
+        plan = self.finalisation_plan(retained.product)
+        approved_value: object = plan.get('assets') if plan is not None else dict[str, object]()
+        if not isinstance(approved_value, dict):
+            raise TypeError('Malformed finalisation asset plan')
+        approved = cast('dict[str, object]', approved_value)
+        extras = set(actual) - set(retained.assets)
+        if any(actual.get(name) != asset for name, asset in retained.assets.items()) or (
+            extras - set(approved)
+        ):
             raise ValueError('Recovery asset identities differ')
-        downloaded = {name: self.read(retained.product, asset) for name, asset in actual.items()}
+        downloaded = {
+            name: self.read(retained.product, asset) for name, asset in retained.assets.items()
+        }
         # Incomplete local directories are never offered as verified recovery output.
         with TemporaryDirectory() as directory:
             staging = Path(directory)
