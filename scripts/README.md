@@ -548,6 +548,25 @@ All stages require `--root`, `--admin-id`, `--admin-target` and `--repository-id
 The numeric repository identity must match the platform context.
 The administrative draft must already exist with its retained ID and private role.
 Missing or changed administrative history stops work.
+
+For separately authorized hosted queue tests, set `TARN_RELEASE_HOSTED_PROOF` to
+`true` only for the controlled test period. Preparation still needs its existing
+enable variable. Registry publication and public finalization remain disabled.
+The coordinator records a private checkpoint after retaining or recovering originals.
+It then waits for the normal `pypi` environment approval with no token permissions.
+After approval, an isolated job compares the original source, history and live
+destinations with that checkpoint. It retrieves and verifies the original files again.
+A changed destination, history, source or execution identity stops the probe.
+This test does not grant production approval for package publication.
+
+The trusted CLI stages are `checkpoint` and `recheck --head DIGEST`.
+The first stage records the current attempt and returns its checkpoint digest.
+The second stage requires that exact digest in the same run and attempt.
+Both stages use the common identity arguments described above.
+The complete workflow holds the fixed `tarn-release` concurrency group through
+the approval wait and the state comparison. Queue order is not guaranteed.
+If a request overflows the queue, inspect live state before starting a new request.
+Do not treat an overflow cancellation as completed work or retry it automatically.
 There is no automatic replacement of administrative storage.
 
 The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and

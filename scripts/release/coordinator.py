@@ -346,6 +346,74 @@ def guard(root: Path, storage: Storage, receipt: dict[str, object]) -> Event:
     return event
 
 
+def checkpoint(root: Path, storage: Storage, head: str | None) -> dict[str, object]:
+    """Exercise state binding across a hosted approval wait, without publishing."""
+    source, records, observed = current(root, storage)
+    if not records:
+        raise ValueError('Retained originals and attempt history required')
+    last = records[-1]
+    if (
+        last.event.run != os.environ['GITHUB_RUN_ID']
+        or last.event.attempt != os.environ['GITHUB_RUN_ATTEMPT']
+        or last.event.source != source['commit']
+    ):
+        raise ValueError('Stale checkpoint attempt or changed source')
+    if head is None:
+        admissions = [record for record in records if record.event.kind == 'admitted']
+        retained = [record for record in records if record.event.kind == 'recovery-stored']
+        if (
+            not admissions
+            or not retained
+            or admissions[-1].event.details.get('source') != source
+            or last.event.kind not in ('admitted', 'recovery-stored')
+            or last.event.candidate is None
+            or retained[-1].event.candidate != last.event.candidate
+        ):
+            raise ValueError('Retained candidate and current admission required')
+        recovery = retained[-1].event.details['recovery']
+    else:
+        if (
+            last.digest != head
+            or last.event.kind != 'hosted-checkpoint'
+            or last.event.details.get('source') != source
+            or last.event.details.get('observations') != observed
+        ):
+            raise ValueError('Checkpoint source, history or destination state changed')
+        recovery = last.event.details['recovery']
+    with TemporaryDirectory() as directory:
+        storage.recover(recovery_copy(recovery), source, Path(directory) / 'verified')
+    if current(root, storage) != (source, records, observed):
+        raise ValueError('State changed during checkpoint verification')
+    if head is None:
+        last = storage.append(
+            Event(
+                last.event.version,
+                last.event.candidate,
+                last.event.source,
+                last.event.run,
+                last.event.attempt,
+                last.event.sequence + 1,
+                'hosted-checkpoint',
+                last.digest,
+                {'source': source, 'observations': observed, 'recovery': recovery},
+            ),
+        )
+    return {'status': 'pass', 'head': last.digest}
+
+
+def hosted_check(args: argparse.Namespace, storage: Storage) -> dict[str, object]:
+    """Require an explicit checkpoint head for the post-approval CLI entrypoint."""
+    if args.stage == 'recheck' and not args.head:
+        raise ValueError('Checkpoint head required after approval')
+    if args.stage == 'checkpoint' and args.head is not None:
+        raise ValueError('Checkpoint creation does not accept a previous head')
+    result = checkpoint(args.root, storage, args.head)
+    if os.environ.get('GITHUB_OUTPUT'):
+        with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
+            stream.write(f'head={result["head"]}\n')
+    return result
+
+
 def report(root: Path, storage: Storage, outcome: str) -> dict[str, object]:
     """Append a best-effort outcome without making recovery depend on reporting."""
     source, records, _observed = current(root, storage)
@@ -564,6 +632,8 @@ def main() -> int:
             'review',
             'publish-pypi',
             'finalise',
+            'checkpoint',
+            'recheck',
         ],
     )
     parser.add_argument('--root', required=True, type=Path)
@@ -616,7 +686,9 @@ def main() -> int:
             ),
         )
         result: dict[str, object]
-        if args.stage == 'report':
+        if args.stage in ('checkpoint', 'recheck'):
+            result = hosted_check(args, storage)
+        elif args.stage == 'report':
             result = report(args.root, storage, args.outcome)
         elif args.stage == 'admit':
             result = admit(args.root, storage)

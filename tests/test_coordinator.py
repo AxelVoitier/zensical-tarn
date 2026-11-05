@@ -291,6 +291,41 @@ class CoordinatorChecks(unittest.TestCase):
         ).hexdigest()
         return candidate
 
+    def retain_candidate(self) -> Path:
+        """Prepare original files through the CLI before exercising an approval wait."""
+        product = Draft(20, 'product', 'v1.2.3', self.commit, '123')
+        self.service.releases[20] = Release(
+            20,
+            product.tag,
+            product.target,
+            product.body,
+            draft=True,
+        )
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        candidate = self.make_candidate()
+        self.run_cli(
+            'retain',
+            '--receipt',
+            str(receipt),
+            '--candidate-dir',
+            str(candidate),
+            '--product-id',
+            '20',
+            '--candidate-digest',
+            self.candidate_digest,
+        )
+        return candidate
+
+    def test_approval_wait_rechecks_live_destinations_against_retained_checkpoint(self) -> None:
+        self.retain_candidate()
+        checkpoint = self.run_cli('checkpoint')
+        self.assertEqual(checkpoint['status'], 'pass')
+        self.run_cli('recheck', '--head', str(checkpoint['head']))
+        self.registry = {'urls': [{'filename': 'outside-writer.whl'}]}
+        self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
+        self.assertIn('changed', self.output)
+
     def test_new_dispatch_recovers_verified_originals_without_rebuilding(self) -> None:
         receipt = self.directory / 'receipt.json'
         self.run_cli('admit', '--output', str(receipt))
@@ -336,6 +371,64 @@ class CoordinatorChecks(unittest.TestCase):
             b'original source',
         )
         self.assertIn('gh workflow run release-preparation.yml', receipt.read_text())
+
+    def test_hosted_checkpoint_cannot_be_replayed_by_a_new_run(self) -> None:
+        self.retain_candidate()
+        checkpoint = self.run_cli('checkpoint')
+        self.environ['GITHUB_RUN_ID'] = '102'
+        self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
+        self.assertIn('Stale checkpoint attempt', self.output)
+
+    def test_resumed_originals_can_wait_but_changed_history_stops_advancement(self) -> None:
+        self.retain_candidate()
+        self.run_cli('checkpoint')
+        self.run_cli('report', '--outcome', 'success')
+        self.environ.update(GITHUB_EVENT_NAME='workflow_dispatch', GITHUB_RUN_ID='102')
+        self.event = {'inputs': {'mode': 'resume'}}
+        receipt = self.directory / 'resumed.json'
+        self.run_cli('admit', '--output', str(receipt))
+        self.run_cli(
+            'recover',
+            '--receipt',
+            str(receipt),
+            '--output',
+            str(self.directory / 'originals'),
+        )
+        checkpoint = self.run_cli('checkpoint')
+        self.run_cli('recheck', '--head', str(checkpoint['head']))
+        self.run_cli('report', '--outcome', 'cancelled')
+        self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
+        self.assertIn('history or destination state changed', self.output)
+
+    def test_hosted_checkpoint_verifies_original_bytes_after_approval(self) -> None:
+        self.retain_candidate()
+        checkpoint = self.run_cli('checkpoint')
+        owner, asset, _data = next(
+            item for item in self.service.assets.values() if item[1].name.endswith('.whl')
+        )
+        self.service.assets[asset.id] = (owner, asset, b'substituted file')
+        self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
+
+    def test_hosted_checkpoint_requires_originals_and_a_bound_head(self) -> None:
+        self.run_cli('admit', '--output', str(self.directory / 'receipt.json'))
+        self.run_cli('checkpoint', expected=1)
+        self.assertIn('Retained candidate', self.output)
+        self.run_cli('recheck', expected=1)
+        self.assertIn('Checkpoint head required', self.output)
+
+    def test_hosted_queue_probe_holds_the_coordinator_through_recheck(self) -> None:
+        workflow = (ROOT / '.github/workflows/release-preparation.yml').read_text()
+        self.assertIn('  hosted-checkpoint:', workflow)
+        self.assertIn("vars.TARN_RELEASE_HOSTED_PROOF == 'true'", workflow)
+        self.assertIn('needs: hosted-checkpoint', workflow)
+        self.assertIn('needs: [hosted-checkpoint, hosted-approval]', workflow)
+        self.assertIn('coordinator.py recheck', workflow)
+        approval = workflow.split('  hosted-approval:\n')[1].split('\n  hosted-recheck:')[0]
+        self.assertIn('environment: pypi', approval)
+        self.assertIn('permissions: {}', approval)
+        self.assertNotIn('checkout', approval)
+        report = workflow.split('\n  report:')[1]
+        self.assertIn('hosted-recheck', report)
 
     def test_default_branch_dispatch_and_release_publication_are_rejected(self) -> None:
         for changed in (

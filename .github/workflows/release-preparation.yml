@@ -185,6 +185,70 @@ jobs:
           path: ${{ runner.temp }}/originals/
           if-no-files-found: error
 
+  hosted-checkpoint:
+    needs: [resolve, retain, resume]
+    if: >-
+      always() && vars.TARN_RELEASE_HOSTED_PROOF == 'true' &&
+      needs.resolve.result == 'success' &&
+      (needs.retain.result == 'success' || needs.resume.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Isolated private checkpoint; never execute package code.
+    outputs:
+      head: ${{ steps.checkpoint.outputs.head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Bind original files and live state before the approval wait
+        id: checkpoint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python -I scripts/release/coordinator.py checkpoint --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID"
+
+  hosted-approval:
+    needs: hosted-checkpoint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: pypi
+    permissions: {}
+    steps:
+      - name: Exercise the approval wait without publication authority
+        run: echo 'Hosted queue probe approved. No package publication is performed.'
+
+  hosted-recheck:
+    needs: [hosted-checkpoint, hosted-approval]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # Authenticated private draft reads; no package execution.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - name: Recheck original source, history, files and destinations after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECKPOINT_HEAD: ${{ needs.hosted-checkpoint.outputs.head }}
+        run: >-
+          python -I scripts/release/coordinator.py recheck --root .
+          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
+          --repository-id "$REPOSITORY_ID" --head "$CHECKPOINT_HEAD"
+
   publish-testpypi:
     needs: [resolve, retain, resume]
     # Hard gate: no variable or dispatch input can enable registry writes in Stage B.
@@ -304,7 +368,7 @@ jobs:
           --repository-id "$REPOSITORY_ID"
 
   report:
-    needs: [resolve, prebuild, build, retain, resume, publish-testpypi, verify-testpypi, review, publish-pypi, finalise]
+    needs: [resolve, prebuild, build, retain, resume, hosted-checkpoint, hosted-approval, hosted-recheck, publish-testpypi, verify-testpypi, review, publish-pypi, finalise]
     if: always() && needs.resolve.outputs.head != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
