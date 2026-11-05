@@ -154,6 +154,8 @@ The existing Release preparation entrypoint selects the workflow from that ref.
 The control mode skips normal release jobs and all package execution. It never gives the probe
 workflow a Trusted Publisher registration. The approval job has no token
 permissions or registry upload code.
+The version backend excludes `v0-release-controls-*` when describing package
+versions, so fetching retained setup tags does not change package version selection.
 
 The privileged preparation stage validates the real administrative identity,
 including its fixed tag, role, numeric ID and exact marker. It creates a
