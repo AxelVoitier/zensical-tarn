@@ -1,0 +1,7 @@
+name: Reviewed GitHub CLI
+description: Install the exact release verifier using its reviewed archive digest
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: bash scripts/release/setup_gh.sh

@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/check.yml'
+      - '.github/actions/**'
       - '.github/workflows/release-preparation.yml'
       - '.gitignore'
       - 'pyproject.toml'
@@ -86,6 +87,8 @@ jobs:
           artifact-ids: ${{ inputs.candidate-artifact-id }}
           path: ${{ runner.temp }}/candidate
           merge-multiple: true
+      - uses: ./.github/actions/setup-gh
+        if: inputs.candidate-artifact-id != ''
       - name: Verify the exact selected candidate and both original signed statements
         if: inputs.candidate-artifact-id != ''
         env:
@@ -161,6 +164,8 @@ jobs:
           artifact-ids: ${{ inputs.candidate-artifact-id }}
           path: ${{ runner.temp }}/candidate
           merge-multiple: true
+      - uses: ./.github/actions/setup-gh
+        if: inputs.candidate-artifact-id != ''
       - name: Verify the exact selected candidate and both original signed statements
         if: inputs.candidate-artifact-id != ''
         env:

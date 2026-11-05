@@ -65,6 +65,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Require the reviewed verifier runtime
         run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Admit frozen tagged instructions against retained operational state
@@ -91,6 +92,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Recheck admission before starting preparation
         env:
           GH_TOKEN: ${{ github.token }}
@@ -132,6 +134,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Require the reviewed verifier runtime
         run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -167,6 +170,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Require the reviewed verifier runtime
         run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Retrieve verified originals and original evidence without rebuilding
@@ -206,6 +210,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Require the reviewed verifier runtime
         run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Bind original files and live state before the approval wait
@@ -242,6 +247,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Require the reviewed verifier runtime
         run: test "$(gh --version | head -n 1 | cut -d ' ' -f 3)" = '2.99.0'
       - name: Recheck original source, history, files and destinations after approval
@@ -387,6 +393,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
       - name: Best-effort private result and original-tag recovery command
         env:
           GH_TOKEN: ${{ github.token }}

@@ -6,6 +6,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -429,6 +430,39 @@ class CoordinatorChecks(unittest.TestCase):
         self.assertNotIn('checkout', approval)
         report = workflow.split('\n  report:')[1]
         self.assertIn('hosted-recheck', report)
+
+    def test_verifier_jobs_provision_the_pinned_cli_before_checking_its_version(self) -> None:
+        for filename in ('release-preparation.yml', 'release-build.yml', 'check.yml'):
+            workflow = (ROOT / '.github/workflows' / filename).read_text()
+            for job in re.split(r'\n  (?=[a-zA-Z0-9_-]+:)', workflow)[1:]:
+                if 'gh --version' in job:
+                    with self.subTest(workflow=filename, job=job.splitlines()[0]):
+                        self.assertIn('uses: ./.github/actions/setup-gh', job)
+                        self.assertLess(job.index('setup-gh'), job.index('gh --version'))
+
+    def test_workflow_runtime_rejects_a_corrupt_download_before_exposing_the_cli(self) -> None:
+        commands = self.directory / 'commands'
+        commands.mkdir()
+        curl = commands / 'curl'
+        curl.write_text(
+            '#!/bin/sh\nwhile [ "$1" != --output ]; do shift; done\n'
+            'shift\nprintf tampered > "$1"\n',
+        )
+        curl.chmod(0o755)
+        path_file = self.directory / 'github-path'
+        result = subprocess.run(
+            ['bash', str(ROOT / 'scripts/release/setup_gh.sh')],
+            env={
+                **os.environ,
+                'PATH': str(commands) + os.pathsep + os.environ['PATH'],
+                'RUNNER_TEMP': str(self.directory),
+                'GITHUB_PATH': str(path_file),
+            },
+            capture_output=True,
+            check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(path_file.exists())
 
     def test_default_branch_dispatch_and_release_publication_are_rejected(self) -> None:
         for changed in (

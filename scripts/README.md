@@ -567,6 +567,11 @@ The complete workflow holds the fixed `tarn-release` concurrency group through
 the approval wait and the state comparison. Queue order is not guaranteed.
 If a request overflows the queue, inspect live state before starting a new request.
 Do not treat an overflow cancellation as completed work or retry it automatically.
+
+Hosted verifier jobs install GitHub CLI 2.99.0 through `.github/actions/setup-gh`.
+The installer checks a fixed SHA-256 digest before extracting the official Linux amd64 archive.
+It checks the installed version before adding the binary directory to the job path.
+The runner image can supply a newer CLI without changing the selected verifier.
 There is no automatic replacement of administrative storage.
 
 The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and
