@@ -8,6 +8,11 @@ on:
     tags: ['v[0-9]*']
   workflow_dispatch:
     inputs:
+      release-controls:
+        description: Run separately authorised control probes from a frozen setup tag
+        required: false
+        type: boolean
+        default: false
       mode:
         description: Resume retained originals, or repeat full preparation before originals exist
         type: choice
@@ -30,8 +35,15 @@ env:
   REPOSITORY_ID: ${{ vars.TARN_RELEASE_REPOSITORY_ID }}
 
 jobs:
+  release-controls:
+    if: github.event_name == 'workflow_dispatch' && inputs.release-controls
+    permissions:
+      contents: write # Only isolated setup fixtures receive this authority.
+    uses: ./.github/workflows/release-controls.yml
+
   resolve:
     if: >-
+      !inputs.release-controls &&
       vars.TARN_RELEASE_PREPARATION_ENABLED == 'true' &&
       startsWith(github.ref, 'refs/tags/v') &&
       (github.event_name != 'create' || github.event.ref_type == 'tag')

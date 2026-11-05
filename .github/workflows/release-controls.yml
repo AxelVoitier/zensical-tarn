@@ -6,10 +6,7 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: tarn-release
-  cancel-in-progress: false
-  queue: max
+# The coordinating caller holds tarn-release through all probes and approval.
 
 env:
   RECORD_ID: ${{ vars.TARN_RELEASE_RECORD_ID }}

@@ -447,8 +447,8 @@ For the trusted interfaces and failure meanings, read [Candidate-bound productio
 
 ## Check hosted release controls
 
-The manual Package checks workflow has a separate `release-controls` mode.
-It calls the isolated control probes instead of the package and browser jobs.
+The manual Release preparation workflow has a separate `release-controls` mode.
+It calls the isolated control probes instead of the normal release jobs.
 Run it only under separately authorised setup instructions from a reviewed,
 frozen `v0-release-controls-COMMIT` tag. Replace `COMMIT` with its full source SHA.
 This name matches the environment's tag filter but is not a package version.

@@ -174,6 +174,7 @@ class StorageChecks(unittest.TestCase):
             ):
                 self.assertEqual(kwargs['input'], b'abc')
                 self.assertIn('Content-Type: application/octet-stream', argv)
+                self.assertIn('Content-Length: 3', argv)
                 result = b'{}'
             else:
                 self.fail(f'Unexpected external request: {endpoint}')

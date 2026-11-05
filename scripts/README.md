@@ -147,11 +147,11 @@ where `COMMIT` is the full SHA of that tag's source. Push the reviewed source
 and create the setup tag only with separate setup authorisation. Then dispatch:
 
 ```bash
-gh workflow run check.yml --repo AxelVoitier/zensical-tarn --ref v0-release-controls-COMMIT -f release-controls=true
+gh workflow run release-preparation.yml --repo AxelVoitier/zensical-tarn --ref v0-release-controls-COMMIT -f mode=resume -f release-controls=true
 ```
 
-The existing Package checks entrypoint selects the workflow from that ref.
-The control mode skips package and browser execution. It never gives the probe
+The existing Release preparation entrypoint selects the workflow from that ref.
+The control mode skips normal release jobs and all package execution. It never gives the probe
 workflow a Trusted Publisher registration. The approval job has no token
 permissions or registry upload code.
 

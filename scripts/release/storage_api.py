@@ -98,6 +98,8 @@ class GitHubAPI:
                     'Content-Type: application/json'
                     if json_body
                     else 'Content-Type: application/octet-stream',
+                    '-H',
+                    f'Content-Length: {len(data)}',
                 ],
             )
         return subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.

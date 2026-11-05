@@ -22,12 +22,6 @@ on:
       - 'scripts/**'
       - 'tests/**'
   workflow_dispatch:
-    inputs:
-      release-controls:
-        description: Run separately authorised control probes from a frozen setup tag
-        required: false
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       ref:
@@ -67,11 +61,10 @@ concurrency:
   # A caller has its own workflow name: keep its checks separate from push runs
   # and from the caller's outer concurrency group to avoid self-cancellation.
   group: package-checks-${{ github.workflow }}-${{ inputs.candidate-artifact-id || inputs.ref || github.ref }}
-  cancel-in-progress: ${{ !inputs.release-controls && inputs.candidate-artifact-id == '' }}
+  cancel-in-progress: ${{ inputs.candidate-artifact-id == '' }}
 
 jobs:
   check:
-    if: ${{ !inputs.release-controls }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -151,7 +144,6 @@ jobs:
           if-no-files-found: error
 
   browser:
-    if: ${{ !inputs.release-controls }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -203,9 +195,3 @@ jobs:
           name: browser-artifacts
           path: browser-artifacts/
           retention-days: 7
-
-  release-controls:
-    if: github.event_name == 'workflow_dispatch' && inputs.release-controls
-    permissions:
-      contents: write # Only the isolated fixture jobs receive this authority.
-    uses: ./.github/workflows/release-controls.yml

@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import unittest
@@ -124,6 +125,12 @@ class GitHubCommands:
 
 
 class HostedProbeTests(unittest.TestCase):
+    def test_reusable_package_checks_never_request_release_write_authority(self) -> None:
+        workflow = Path(__file__).resolve().parent.parent / '.github/workflows/check.yml'
+        self.assertNotRegex(
+            workflow.read_text(), re.compile(r'^\s+contents:\s+write\b', re.MULTILINE)
+        )
+
     def invoke(
         self,
         stage: str,
