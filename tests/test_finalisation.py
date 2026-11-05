@@ -252,6 +252,28 @@ class FinalisationChecks(unittest.TestCase):
         self.assertEqual(observed.make_latest, 'false')
         self.assertEqual(observed.release.tag, 'v1.2.3rc1')
 
+    def test_public_report_identifies_frozen_workflows_and_verified_builder(self) -> None:
+        self.assertEqual(self.finish().status, 'complete')
+        report = json.loads(self.github.observe(900).assets['verification-report.json'])
+        self.assertEqual(
+            report['workflows'],
+            {
+                'coordinator': {
+                    'path': '.github/workflows/release-preparation.yml',
+                    'revision': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                },
+                'builder': {
+                    'path': '.github/workflows/release-build.yml',
+                    'revision': 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                    'id': 'https://github.com/AxelVoitier/zensical-tarn/'
+                    '.github/workflows/release-build.yml@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+                },
+            },
+        )
+        review = json.loads(self.summary)
+        self.assertIn('workflows', review['report_format']['fields'])
+        self.assertEqual(report['source'], review['manifest']['source'])
+
 
 class HostedBoundaryChecks(unittest.TestCase):
     def test_hosted_finalisation_refuses_unconditionally(self) -> None:

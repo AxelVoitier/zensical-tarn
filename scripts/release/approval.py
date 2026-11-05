@@ -25,7 +25,15 @@ from release.testpypi import retrieve
 REQUIRED_CHECKS = {'preparation', 'reproducibility', 'archive-checks', 'testpypi-installation'}
 REPORT_FORMAT = {
     'schema': 'tarn-public-verification-v1',
-    'fields': ['source', 'archives', 'build_evidence', 'publishing_evidence', 'checks', 'attempts'],
+    'fields': [
+        'source',
+        'workflows',
+        'archives',
+        'build_evidence',
+        'publishing_evidence',
+        'checks',
+        'attempts',
+    ],
     'production_results': 'pending; fill only from verified PyPI retrieval',
 }
 

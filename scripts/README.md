@@ -690,7 +690,8 @@ The existing public-safe `candidate.json` remains attached and is included in th
 The final asset set also contains original archives, original build bundles, per-file PyPI publishing bundles,
 `SHA256SUMS` and `verification-report.json`.
 It records exact public asset digests, notes, settings and report contents in a private `github-prepared` event.
-The public report includes frozen source/workflow/builder identities, archive and evidence digests,
+The public report includes frozen source, explicit coordinator/builder paths and revisions, and the verified builder identity.
+It also includes archive and evidence digests,
 passing check receipts and selected technical attempt outcomes.
 It projects named fields and fixed event kinds instead of copying private event details.
 Known private fields and credential forms in public JSON or notes stop publication.

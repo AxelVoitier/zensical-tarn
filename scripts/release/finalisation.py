@@ -19,6 +19,7 @@ from typing import Protocol, cast
 from release.approval import REPORT_FORMAT, ReviewMaterial, changelog_section, publisher
 from release.candidate import archive_names, canonical
 from release.reconciliation import UNCERTAINTY_SECONDS, Destination, Outcome, Reconciler
+from release.sdist import BUILDER, COORDINATOR, REPOSITORY
 from release.storage import Event, Release, digest
 from release.storage_api import document
 
@@ -161,6 +162,14 @@ def public_assets(
     report = {
         'schema': REPORT_FORMAT['schema'],
         'source': dict(reconciler.source),
+        'workflows': {
+            'coordinator': {'path': COORDINATOR, 'revision': reconciler.source['commit']},
+            'builder': {
+                'path': BUILDER,
+                'revision': reconciler.source['commit'],
+                'id': f'https://github.com/{REPOSITORY}/{BUILDER}@{reconciler.source["commit"]}',
+            },
+        },
         'archives': {
             name: {**document(metadata), 'pypi_verification': 'pass'}
             for name, metadata in document(manifest['archives']).items()
