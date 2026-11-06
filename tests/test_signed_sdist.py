@@ -23,6 +23,7 @@ from release.sdist import (
     statement,
     verify_bundle,
 )
+from release_context import GITHUB_CONTEXT
 
 
 class SignedSdistChecks(unittest.TestCase):
@@ -34,7 +35,8 @@ class SignedSdistChecks(unittest.TestCase):
             git(root, 'config', 'user.name', 'Tarn tests')
             git(root, 'config', 'user.email', 'tests@example.invalid')
             (root / 'pyproject.toml').write_text(
-                '[dependency-groups]\nrelease = ["build==1.6.1"]\n', encoding='utf-8'
+                '[dependency-groups]\nrelease = ["build==1.6.1"]\n',
+                encoding='utf-8',
             )
             git(root, 'add', '.')
             git(root, '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Source')
@@ -51,7 +53,8 @@ class SignedSdistChecks(unittest.TestCase):
                     self.assertEqual(identity['commit'], commit)
                     self.assertEqual(identity['tag_ref_type'], 'tag' if annotated else 'commit')
                     self.assertEqual(
-                        identity['tag_ref_target'], git(root, 'rev-parse', 'v1.2.3rc1')
+                        identity['tag_ref_target'],
+                        git(root, 'rev-parse', 'v1.2.3rc1'),
                     )
                     self.assertEqual(identity['version'], '1.2.3rc1')
                     if annotated:
@@ -163,6 +166,7 @@ class SignedSdistChecks(unittest.TestCase):
                 'toolchain': {'build': '1.6.1'},
             }
             transport = {
+                **GITHUB_CONTEXT,
                 'run_id': '101',
                 'run_attempt': '2',
                 'artifact_id': '73',
@@ -170,7 +174,7 @@ class SignedSdistChecks(unittest.TestCase):
                 'transport_digest': 'sha256:' + 'd' * 64,
             }
             expected = json.loads(
-                (ROOT / 'tests/fixtures/sdist/statement.json').read_text(encoding='utf-8')
+                (ROOT / 'tests/fixtures/sdist/statement.json').read_text(encoding='utf-8'),
             )
             self.assertEqual(statement(identity, archive, transport), expected)
             check_statement(expected, identity, archive, transport)
@@ -181,10 +185,16 @@ class SignedSdistChecks(unittest.TestCase):
                 ('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', '0' * 64),
                 ('release-build.yml', 'evil.yml'),
                 ('"run_attempt": "2"', '"run_attempt": "3"'),
+                ('"event_name": "push"', '"event_name": "workflow_dispatch"'),
+                ('"repository_owner_id": "456"', '"repository_owner_id": "789"'),
+                ('github-hosted', 'self-hosted'),
             ):
                 with self.subTest(change=old), self.assertRaises(ValueError):
                     check_statement(
-                        json.loads(text.replace(old, new)), identity, archive, transport
+                        json.loads(text.replace(old, new)),
+                        identity,
+                        archive,
+                        transport,
                     )
             archive.write_bytes(b'substitute')
             with self.assertRaises(ValueError):
@@ -199,11 +209,12 @@ class SignedSdistChecks(unittest.TestCase):
             archive = root / 'zensical_tarn-1.2.3.tar.gz'
             archive.write_bytes(b'abc')
             identity: dict[str, object] = {'version': '1.2.3', 'tag': 'v1.2.3', 'commit': 'a' * 40}
-            transport = {'run_id': '101', 'run_attempt': '2'}
+            transport = {**GITHUB_CONTEXT, 'run_id': '101', 'run_attempt': '2'}
             expected = statement(identity, archive, transport)
             evidence = root / 'local-evidence.json'
             evidence.write_text(
-                json.dumps([{'verificationResult': {'statement': expected}}]), encoding='utf-8'
+                json.dumps([{'verificationResult': {'statement': expected}}]),
+                encoding='utf-8',
             )
             private, public, signature = (
                 root / name for name in ('private.pem', 'public.pem', 'signature')
@@ -244,7 +255,8 @@ class SignedSdistChecks(unittest.TestCase):
             real_run = subprocess.run
 
             def local_verifier(
-                argv: list[str], **_kwargs: object
+                argv: list[str],
+                **_kwargs: object,
             ) -> subprocess.CompletedProcess[str]:
                 # Replace the external verifier with local signature verification.
                 # Hosted certificate validation remains untested.
@@ -270,7 +282,10 @@ class SignedSdistChecks(unittest.TestCase):
                     capture_output=True,
                 )
                 return subprocess.CompletedProcess(
-                    argv, 0, evidence.read_text(encoding='utf-8'), ''
+                    argv,
+                    0,
+                    evidence.read_text(encoding='utf-8'),
+                    '',
                 )
 
             with patch('release.sdist.subprocess.run', side_effect=local_verifier):
@@ -319,7 +334,11 @@ class SignedSdistChecks(unittest.TestCase):
 
     @staticmethod
     def command(
-        stage: str, root: Path, tag: str, commit: str, *options: str
+        stage: str,
+        root: Path,
+        tag: str,
+        commit: str,
+        *options: str,
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [

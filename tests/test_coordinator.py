@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import unittest
@@ -19,6 +20,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'scripts'))
+from release_context import GITHUB_CONTEXT
+
 sys.path.insert(0, str(ROOT / 'tests'))
 from release import coordinator
 from release.candidate import manifest_bytes, wheel_statement
@@ -60,6 +63,8 @@ class CoordinatorChecks(unittest.TestCase):
             'GH_TOKEN': 'fixture-token',
             'GITHUB_REPOSITORY': 'AxelVoitier/zensical-tarn',
             'GITHUB_REPOSITORY_ID': '123',
+            'GITHUB_REPOSITORY_OWNER_ID': '456',
+            'RUNNER_ENVIRONMENT': 'github-hosted',
             'GITHUB_EVENT_NAME': 'create',
             'GITHUB_REF': 'refs/tags/v1.2.3',
             'GITHUB_SHA': self.commit,
@@ -266,6 +271,8 @@ class CoordinatorChecks(unittest.TestCase):
         wheel.write_bytes(b'original wheel')
         transfers = {
             kind: {
+                **GITHUB_CONTEXT,
+                'event_name': self.environ['GITHUB_EVENT_NAME'],
                 'run_id': self.environ['GITHUB_RUN_ID'],
                 'run_attempt': '1',
                 'artifact_id': identifier,
@@ -356,6 +363,9 @@ class CoordinatorChecks(unittest.TestCase):
             '--candidate-digest',
             self.candidate_digest,
         )
+        original_manifest = (candidate / 'candidate.json').read_bytes()
+        # Simulate expired temporary files locally, retaining only service originals.
+        shutil.rmtree(candidate)
         receipt.unlink()
         self.environ['GITHUB_RUN_ID'] = '103'
         self.event = {'inputs': {'mode': 'resume'}}
@@ -365,7 +375,7 @@ class CoordinatorChecks(unittest.TestCase):
         self.run_cli('recover', '--receipt', str(receipt), '--output', str(recovered))
         self.assertEqual(
             (recovered / 'candidate.json').read_bytes(),
-            (candidate / 'candidate.json').read_bytes(),
+            original_manifest,
         )
         self.assertEqual(
             (recovered / 'files/zensical_tarn-1.2.3.tar.gz').read_bytes(),

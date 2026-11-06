@@ -17,6 +17,7 @@ from release.candidate import canonical, manifest_bytes, wheel_statement
 from release.reconciliation import Outcome, Publication, Publisher, Reconciler, RemoteFile
 from release.sdist import statement
 from release.storage import Event, Storage, digest
+from release_context import GITHUB_CONTEXT
 from test_storage import ReleaseService
 
 
@@ -118,6 +119,7 @@ class ReconciliationChecks(unittest.TestCase):
         (self.files / self.wheel).write_bytes(b'wheel')
         transfers = {
             kind: {
+                **GITHUB_CONTEXT,
                 'run_id': '101',
                 'run_attempt': '1',
                 'artifact_id': number,

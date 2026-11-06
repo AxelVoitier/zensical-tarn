@@ -1,10 +1,13 @@
-# Tarn source archive build, version 1
+# Tarn source archive provenance profile, version 1
 
-This build type identifies the source archive stage in `release-build.yml`.
+This profile records the source archive produced by the tagged release workflow.
+It uses GitHub's [workflow build type](https://actions.github.io/buildtypes/workflow/v1).
+The external workflow parameters describe the complete coordinating workflow.
+Protected internal parameters identify the source archive stage and its selected inputs.
 The coordinator must call that reusable workflow through a local workflow reference.
 Both workflows and the trusted helpers come from the same reviewed product tag commit.
 The trusted caller supplies the frozen tag ref target OID and its type as required inputs.
-The workflow is not yet connected to the coordinator.
+The coordinator admits the frozen tag before calling the reusable builder.
 
 The unprivileged job invokes `build_sdist` from `prepare_release.py`.
 That shared function checks the clean tagged source and installed release tools.
@@ -19,8 +22,8 @@ It has read access to source and artifacts, plus signing and attestation authori
 It has no publisher environment or package execution step.
 Checkout credentials are not persisted in either job.
 The signer uses Python 3.12.12 and requires GitHub CLI 2.99.0.
-If the runner supplies another CLI version, the job stops.
-Availability of these runtimes on the hosted runner remains untested.
+The installer checks a fixed archive digest and version before exposing the CLI.
+An unexpected installed version stops the job.
 
 The helper checks repository, tag, commit and coordinating workflow against platform context.
 It reads the source tree, timestamp, tag target and target type through Git.
@@ -39,8 +42,13 @@ The helper copies that member as data and computes its SHA-256 digest independen
 It never extracts or executes the source archive.
 
 The statement has exactly one filename and SHA-256 subject.
-Its external parameters record the frozen source, workflow and toolchain identities.
-Its internal parameters retain producer run, attempt, artifact and transport identities.
+Its external parameters record the coordinating workflow repository, path and tag ref.
+Its internal parameters record the frozen source, workflow and toolchain identities.
+They also retain the original event, numeric repository and owner IDs, and hosted-runner identity.
+The transport record preserves that original context when a later dispatch verifies the bundle.
+Internal parameters also retain producer run, attempt, artifact and transport identities.
+The builder ID names the reusable signing workflow at the original tag ref.
+The verifier separately requires its exact signer commit from the certificate.
 Its resolved dependency is the tagged source commit.
 The archive SHA-256 identifies package bytes independently of the transport digest.
 The action signs the helper's predicate with the selected archive as its sole subject.

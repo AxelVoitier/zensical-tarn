@@ -24,6 +24,7 @@ from release.candidate import (
     wheel_statement,
 )
 from release.sdist import select_files, statement
+from release_context import GITHUB_CONTEXT
 
 
 class CandidateChecks(unittest.TestCase):
@@ -35,8 +36,18 @@ class CandidateChecks(unittest.TestCase):
             sdist.write_bytes(b'abc')
             wheel.write_bytes(b'wheel')
             identity: dict[str, object] = {'version': '1.2.3', 'tag': 'v1.2.3', 'commit': 'a' * 40}
-            source_transfer = {'run_id': '101', 'run_attempt': '2', 'artifact_id': '73'}
-            wheel_transfer = {'run_id': '101', 'run_attempt': '2', 'artifact_id': '75'}
+            source_transfer = {
+                **GITHUB_CONTEXT,
+                'run_id': '101',
+                'run_attempt': '2',
+                'artifact_id': '73',
+            }
+            wheel_transfer = {
+                **GITHUB_CONTEXT,
+                'run_id': '101',
+                'run_attempt': '2',
+                'artifact_id': '75',
+            }
             signed = wheel_statement(identity, sdist, wheel, source_transfer, wheel_transfer)
             definition = json.loads(json.dumps(signed))['predicate']['buildDefinition']
             self.assertEqual(
@@ -44,7 +55,10 @@ class CandidateChecks(unittest.TestCase):
                 {
                     'uri': 'zensical_tarn-1.2.3.tar.gz',
                     'digest': {
-                        'sha256': 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+                        'sha256': (
+                            'ba7816bf8f01cfea414140de5dae2223'
+                            'b00361a396177a9cb410ff61f20015ad'
+                        ),
                     },
                 },
             )
@@ -54,12 +68,22 @@ class CandidateChecks(unittest.TestCase):
                 del changed['predicate']['buildDefinition'][field]
                 with self.subTest(field=field), self.assertRaises(ValueError):
                     check_wheel_statement(
-                        changed, identity, sdist, wheel, source_transfer, wheel_transfer
+                        changed,
+                        identity,
+                        sdist,
+                        wheel,
+                        source_transfer,
+                        wheel_transfer,
                     )
             sdist.write_bytes(b'substituted')
             with self.assertRaises(ValueError):
                 check_wheel_statement(
-                    signed, identity, sdist, wheel, source_transfer, wheel_transfer
+                    signed,
+                    identity,
+                    sdist,
+                    wheel,
+                    source_transfer,
+                    wheel_transfer,
                 )
 
     def test_wheel_transfer_rejects_reports_and_wrong_producer(self) -> None:
@@ -140,6 +164,7 @@ class CandidateChecks(unittest.TestCase):
             identity: dict[str, object] = {'version': '1.2.3', 'commit': 'a' * 40}
             transfers = {
                 'sdist': {
+                    **GITHUB_CONTEXT,
                     'run_id': '101',
                     'run_attempt': '2',
                     'artifact_id': '73',
@@ -147,6 +172,7 @@ class CandidateChecks(unittest.TestCase):
                     'transport_digest': 'sha256:' + 'd' * 64,
                 },
                 'wheel': {
+                    **GITHUB_CONTEXT,
                     'run_id': '101',
                     'run_attempt': '2',
                     'artifact_id': '75',
@@ -202,6 +228,7 @@ class CandidateChecks(unittest.TestCase):
             identity: dict[str, object] = {'version': '1.2.3', 'tag': 'v1.2.3', 'commit': 'a' * 40}
             transfers = {
                 kind: {
+                    **GITHUB_CONTEXT,
                     'run_id': '101',
                     'run_attempt': '2',
                     'artifact_id': artifact,
@@ -235,7 +262,8 @@ class CandidateChecks(unittest.TestCase):
             def sign(kind: str, payload: object) -> None:
                 bundle = files / f'{kind}.sigstore.json'
                 bundle.write_text(
-                    json.dumps([{'verificationResult': {'statement': payload}}]), encoding='utf-8'
+                    json.dumps([{'verificationResult': {'statement': payload}}]),
+                    encoding='utf-8',
                 )
                 real_run(
                     [
@@ -276,7 +304,11 @@ class CandidateChecks(unittest.TestCase):
 
             source_statement = statement(identity, sdist, transfers['sdist'])
             wheel_payload = wheel_statement(
-                identity, sdist, wheel, transfers['sdist'], transfers['wheel']
+                identity,
+                sdist,
+                wheel,
+                transfers['sdist'],
+                transfers['wheel'],
             )
             sign('sdist', source_statement)
             sign('wheel', wheel_payload)
@@ -295,7 +327,7 @@ class CandidateChecks(unittest.TestCase):
                     elif change == 'wrong builder':
                         payload['predicate']['runDetails']['builder']['id'] = 'unexpected'
                     elif change == 'wrong source':
-                        payload['predicate']['buildDefinition']['externalParameters']['source'][
+                        payload['predicate']['buildDefinition']['internalParameters']['source'][
                             'commit'
                         ] = 'b' * 40
                     else:

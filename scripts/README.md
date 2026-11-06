@@ -572,6 +572,15 @@ Hosted verifier jobs install GitHub CLI 2.99.0 through `.github/actions/setup-gh
 The installer checks a fixed SHA-256 digest before extracting the official Linux amd64 archive.
 It checks the installed version before adding the binary directory to the job path.
 The runner image can supply a newer CLI without changing the selected verifier.
+
+The signed statements use GitHub's supported workflow SLSA build type.
+Their external parameters identify the complete coordinating workflow.
+Protected internal parameters retain the full frozen source identity and selected build stage.
+They also retain the original event, numeric repository and owner IDs, and hosted-runner identity.
+The wheel's signed resolved dependencies include the exact selected sdist digest.
+Each transport record preserves the original platform context across later resume runs.
+Both archive transports must match that context and the original execution.
+GitHub artifact attestations and retained downloadable bundles carry the original signed evidence.
 There is no automatic replacement of administrative storage.
 
 The workflow reads `TARN_RELEASE_RECORD_ID`, `TARN_RELEASE_RECORD_TARGET` and

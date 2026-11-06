@@ -24,7 +24,7 @@ BUILDER = '.github/workflows/release-build.yml'
 SDIST_MAX_BYTES = 1_048_576
 TRANSPORT_MAX_BYTES = 2_097_152
 VERSION = re.compile(
-    r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?(?:\.post(?:0|[1-9][0-9]*))?'
+    r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?(?:\.post(?:0|[1-9][0-9]*))?',
 )
 
 
@@ -125,7 +125,7 @@ def select_files(
             producer.get('head_sha') != commit,
             producer.get('repository_id') != int(repository_id),
             producer.get('head_repository_id') != int(repository_id),
-        )
+        ),
     ):
         raise ValueError('Unexpected artifact producer identity')
     digest = 'sha256:' + hashlib.sha256(data).hexdigest()
@@ -184,13 +184,31 @@ def select_archive(
 
 
 PREDICATE_TYPE = 'https://slsa.dev/provenance/v1'
-BUILD_TYPE = (
-    'https://github.com/AxelVoitier/zensical-tarn/blob/main/scripts/release/sdist-build-v1.md'
+BUILD_TYPE = 'https://actions.github.io/buildtypes/workflow/v1'
+GITHUB_CONTEXT_FIELDS = frozenset(
+    ('event_name', 'repository_id', 'repository_owner_id', 'runner_environment'),
 )
 
 
+def build_context(transport: Mapping[str, str]) -> dict[str, str]:
+    """Retain the original platform context required by GitHub's workflow build type."""
+    context = {key: transport[key] for key in GITHUB_CONTEXT_FIELDS}
+    if (
+        context['event_name'] not in ('create', 'push', 'workflow_dispatch')
+        or context['runner_environment'] != 'github-hosted'
+        or any(
+            not re.fullmatch(r'[1-9][0-9]*', context[key])
+            for key in ('repository_id', 'repository_owner_id')
+        )
+    ):
+        raise ValueError('Invalid original GitHub build context')
+    return context
+
+
 def statement(
-    identity: Mapping[str, object], archive: Path, transport: Mapping[str, str]
+    identity: Mapping[str, object],
+    archive: Path,
+    transport: Mapping[str, str],
 ) -> dict[str, object]:
     """Construct one SLSA subject and its protected inputs from trusted selection."""
     if archive.name != f'zensical_tarn-{identity["version"]}.tar.gz' or archive.is_symlink():
@@ -202,26 +220,37 @@ def statement(
             {
                 'name': archive.name,
                 'digest': {'sha256': hashlib.sha256(archive.read_bytes()).hexdigest()},
-            }
+            },
         ],
         'predicate': {
             'buildDefinition': {
                 'buildType': BUILD_TYPE,
-                'externalParameters': {'source': dict(identity)},
-                'internalParameters': {'transport': dict(transport)},
+                'externalParameters': {
+                    'workflow': {
+                        'ref': f'refs/tags/{identity["tag"]}',
+                        'repository': f'https://github.com/{REPOSITORY}',
+                        'path': COORDINATOR,
+                    },
+                },
+                'internalParameters': {
+                    'github': build_context(transport),
+                    'source': dict(identity),
+                    'transport': dict(transport),
+                    'stage': 'sdist',
+                },
                 'resolvedDependencies': [
                     {
                         'uri': f'git+https://github.com/{REPOSITORY}@refs/tags/{identity["tag"]}',
                         'digest': {'gitCommit': identity['commit']},
-                    }
+                    },
                 ],
             },
             'runDetails': {
                 'builder': {
-                    'id': f'https://github.com/{REPOSITORY}/{BUILDER}@{identity["commit"]}'
+                    'id': f'https://github.com/{REPOSITORY}/{BUILDER}@refs/tags/{identity["tag"]}',
                 },
                 'metadata': {
-                    'invocationId': f'https://github.com/{REPOSITORY}/actions/runs/{transport["run_id"]}/attempts/{transport["run_attempt"]}'
+                    'invocationId': f'https://github.com/{REPOSITORY}/actions/runs/{transport["run_id"]}/attempts/{transport["run_attempt"]}',
                 },
             },
         },
@@ -323,7 +352,17 @@ def fetch_files(
 ) -> dict[str, str]:
     """Read the exact platform artifact and independently verify its envelope."""
     run, attempt, repository_id = platform_context(
-        os.environ, str(identity['tag']), str(identity['commit'])
+        os.environ,
+        str(identity['tag']),
+        str(identity['commit']),
+    )
+    context = build_context(
+        {
+            key: os.environ.get('GITHUB_' + key.upper(), '')
+            if key != 'runner_environment'
+            else os.environ.get('RUNNER_ENVIRONMENT', '')
+            for key in GITHUB_CONTEXT_FIELDS
+        },
     )
     if not re.fullmatch(r'[1-9][0-9]*', artifact_id):
         raise ValueError('Invalid artifact ID')
@@ -348,6 +387,7 @@ def fetch_files(
         artifact_id=artifact_id,
     )
 
+    transport.update(context)
     output.mkdir()
     for name, content in files.items():
         (output / name).write_bytes(content)
@@ -355,7 +395,9 @@ def fetch_files(
 
 
 def fetch_selected(
-    identity: Mapping[str, object], artifact_id: str, output: Path
+    identity: Mapping[str, object],
+    artifact_id: str,
+    output: Path,
 ) -> tuple[Path, dict[str, str]]:
     """Read and independently verify the selected source artifact."""
     name = f'zensical_tarn-{identity["version"]}.tar.gz'
@@ -399,7 +441,8 @@ def main() -> int:
         else:
             expected = statement(identity, archive, transport)
             (args.output / 'predicate.json').write_text(
-                json.dumps(expected['predicate'], sort_keys=True) + '\n', encoding='utf-8'
+                json.dumps(expected['predicate'], sort_keys=True) + '\n',
+                encoding='utf-8',
             )
             (args.output / 'selection.json').write_text(
                 json.dumps(

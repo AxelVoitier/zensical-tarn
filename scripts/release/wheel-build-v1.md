@@ -1,8 +1,11 @@
-# Tarn wheel build, version 1
+# Tarn wheel provenance profile, version 1
 
-This build type describes the fixed wheel stage in `release-build.yml`.
+This profile records the wheel produced by the tagged release workflow.
+It uses GitHub's [workflow build type](https://actions.github.io/buildtypes/workflow/v1).
+The external parameters identify the complete coordinating workflow.
+Protected internal parameters identify the wheel stage and its selected inputs.
 The reusable builder and its caller use the same frozen product-tag commit.
-The coordinator remains disconnected until its orchestration work is complete.
+The coordinator admits the frozen tag before calling the reusable builder.
 No hosted execution or SLSA level is established by local fixtures.
 
 The unprivileged `wheel` job receives artifact IDs from the workflow dependency graph.
@@ -30,6 +33,9 @@ The wheel statement has exactly one wheel filename and SHA-256 subject.
 Its protected source, builder and toolchain identities match the source statement.
 Its resolved dependencies include the source commit and exact sdist filename and SHA-256.
 Its internal parameters retain both original archive transport identities.
+They preserve the original GitHub event, repository and owner IDs, and hosted-runner identity.
+Both archives must belong to the same original execution and platform context.
+Verification on a later resume uses that retained context.
 The sdist digest must match the verified source statement subject.
 Two independent signed output digests do not satisfy this relationship.
 No build-produced report, command or predicate can choose these protected fields.

@@ -11,14 +11,17 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import cast
 
-from release.sdist import VERSION, statement, verified_statement, verify_bundle
+from release.sdist import (
+    GITHUB_CONTEXT_FIELDS,
+    VERSION,
+    build_context,
+    statement,
+    verified_statement,
+    verify_bundle,
+)
 
 EVIDENCE_MAX_BYTES = 262_144
 ARCHIVE_MAX_BYTES = 1_048_576
-
-WHEEL_BUILD_TYPE = (
-    'https://github.com/AxelVoitier/zensical-tarn/blob/main/scripts/release/wheel-build-v1.md'
-)
 
 
 def sha256(path: Path) -> str:
@@ -42,11 +45,8 @@ def wheel_statement(
     result['subject'] = [{'name': wheel.name, 'digest': {'sha256': sha256(wheel)}}]
     predicate = cast('dict[str, object]', result['predicate'])
     definition = cast('dict[str, object]', predicate['buildDefinition'])
-    definition['buildType'] = WHEEL_BUILD_TYPE
-    definition['internalParameters'] = {
-        'transport': dict(wheel_transfer),
-        'sdistTransport': dict(source_transfer),
-    }
+    internal = cast('dict[str, object]', definition['internalParameters'])
+    internal.update({'sdistTransport': dict(source_transfer), 'stage': 'wheel'})
     dependencies = cast('list[object]', definition['resolvedDependencies'])
     dependencies.append({'uri': sdist.name, 'digest': {'sha256': sha256(sdist)}})
     return result
@@ -99,7 +99,7 @@ def manifest_bytes(
     if set(transfers) != {'sdist', 'wheel'} or set(evidence_ids) != {'sdist', 'wheel'}:
         raise ValueError('Expected both original evidence identities')
     for kind, transfer in transfers.items():
-        if set(transfer) != {
+        if set(transfer) != set(GITHUB_CONTEXT_FIELDS) | {
             'run_id',
             'run_attempt',
             'artifact_id',
@@ -110,13 +110,17 @@ def manifest_bytes(
             for key in ('run_id', 'run_attempt', 'artifact_id')
         ):
             raise ValueError('Invalid producer identity')
+        build_context(transfer)
         if transfer['artifact_name'] != f'{kind}-{transfer["run_id"]}-{transfer["run_attempt"]}':
             raise ValueError('Unexpected producer artifact name')
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', transfer['transport_digest']):
             raise ValueError('Invalid transport digest')
         if not re.fullmatch(r'[1-9][0-9]*', evidence_ids[kind]):
             raise ValueError('Invalid original evidence identifier')
-    if any(transfers['sdist'][key] != transfers['wheel'][key] for key in ('run_id', 'run_attempt')):
+    if any(
+        transfers['sdist'][key] != transfers['wheel'][key]
+        for key in ('run_id', 'run_attempt', *GITHUB_CONTEXT_FIELDS)
+    ):
         raise ValueError('Wheel and source must belong to the same execution')
     return canonical(
         {
@@ -136,12 +140,15 @@ def manifest_bytes(
             },
             'transports': {kind: dict(value) for kind, value in transfers.items()},
             'wheel_input_sha256': sha256(files / sdist),
-        }
+        },
     )
 
 
 def validate_manifest(
-    data: bytes, digest: str, identity: Mapping[str, object], files: Path
+    data: bytes,
+    digest: str,
+    identity: Mapping[str, object],
+    files: Path,
 ) -> dict[str, object]:
     """Reject noncanonical data, changed identities and substituted original bytes."""
     if not re.fullmatch(r'[0-9a-f]{64}', digest) or hashlib.sha256(data).hexdigest() != digest:

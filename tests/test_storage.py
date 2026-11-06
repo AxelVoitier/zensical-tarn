@@ -19,6 +19,7 @@ from release.candidate import manifest_bytes, wheel_statement
 from release.sdist import statement
 from release.storage import Asset, Draft, Event, Release, Storage
 from release.storage_api import GitHubAPI
+from release_context import GITHUB_CONTEXT
 
 
 class ReleaseService:
@@ -303,6 +304,7 @@ class StorageChecks(unittest.TestCase):
             wheel.write_bytes(b'wheel')
             transfers = {
                 kind: {
+                    **GITHUB_CONTEXT,
                     'run_id': '101',
                     'run_attempt': '1',
                     'artifact_id': number,
