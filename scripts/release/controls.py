@@ -15,16 +15,21 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from http import HTTPStatus
 from pathlib import Path
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from release.candidate import canonical
 from release.sdist import REPOSITORY
 from release.storage import Draft, Storage
-from release.storage_api import GitHubAPI, document, number
+from release.storage_api import GitHubAPI, document, number, release_info
+
+VISIBILITY_READS = 6
+VISIBILITY_INTERVAL_SECONDS = 2
 
 
 def identity() -> Draft:
@@ -106,7 +111,7 @@ def draft_payload(record: Draft, tag: str) -> bytes:
             'draft': True,
             'prerelease': True,
             'make_latest': 'false',
-        }
+        },
     )
 
 
@@ -118,8 +123,8 @@ def create_fixture(api: GitHubAPI, record: Draft, tag: str) -> int:
                 f'repos/{REPOSITORY}/releases',
                 data=draft_payload(record, tag),
                 json_body=True,
-            )
-        )
+            ),
+        ),
     )
     return number(response.get('id'))
 
@@ -139,11 +144,62 @@ def prepare(api: GitHubAPI, record: Draft) -> None:
     if api.download(assets[0].id) != payload:
         raise ValueError('Authenticated fixture read-back differs')
     output('asset_id', assets[0].id)
-    product = create_fixture(api, record, fixture_tag() + '-product')
-    output('product_fixture_id', product)
-    if product == identifier:
-        raise ValueError('Disposable product and record fixtures must be independent')
-    fixture(api, product, record, fixture_tag() + '-product')
+    with api.consistent_reads():
+        # Seed the same pre-creation release snapshot as the coordinator.
+        Storage(api, record)
+        product = api.create_product(fixture_tag() + '-product', record.target, fixture_body())
+        output('product_fixture_id', product.id)
+        if product.id == identifier:
+            raise ValueError('Disposable product and record fixtures must be independent')
+        fixture(api, product.id, record, product.tag)
+        snapshot_ids = listing_ids(api, product.tag, fresh=False)
+        observations: list[dict[str, object]] = []
+        fresh_ids: list[int] = []
+        for attempt in range(VISIBILITY_READS):
+            if attempt:
+                time.sleep(VISIBILITY_INTERVAL_SECONDS)
+            fresh_ids = listing_ids(api, product.tag, fresh=True)
+            observations.append({'read': attempt + 1, 'ids': fresh_ids})
+            if fresh_ids:
+                break
+        print(
+            json.dumps(
+                {
+                    'probe': 'created-draft-listing',
+                    'release_id': product.id,
+                    'snapshot_ids': snapshot_ids,
+                    'fresh_ids': fresh_ids,
+                    'fresh_reads': observations,
+                },
+                sort_keys=True,
+            ),
+        )
+        if snapshot_ids != [product.id] or fresh_ids != [product.id]:
+            raise ValueError('Created draft listing differs; inspect the visibility probe')
+
+
+def listing_ids(api: GitHubAPI, tag: str, *, fresh: bool) -> list[int]:
+    """Compare policy snapshots with direct responses without exposing draft bodies."""
+    matches: list[int] = []
+    seen: set[int] = set()
+    page = 1
+    while True:
+        if fresh:
+            data: object = json.loads(
+                api.request(f'repos/{REPOSITORY}/releases?per_page=100&page={page}'),
+            )
+            if not isinstance(data, list):
+                raise ValueError('Expected release page')
+            batch = [release_info(item) for item in cast('list[object]', data)]
+        else:
+            batch = api.releases_page(page)
+        if not batch:
+            return matches
+        if seen.intersection(item.id for item in batch):
+            raise ValueError('Repeated release page')
+        seen.update(item.id for item in batch)
+        matches.extend(item.id for item in batch if item.tag == tag)
+        page += 1
 
 
 def denied(
@@ -171,7 +227,7 @@ def denied(
 def package(api: GitHubAPI, record: Draft) -> None:
     """Use the actual read-only job token, without executing any package code."""
     if os.environ.get('ACTIONS_ID_TOKEN_REQUEST_TOKEN') or os.environ.get(
-        'ACTIONS_ID_TOKEN_REQUEST_URL'
+        'ACTIONS_ID_TOKEN_REQUEST_URL',
     ):
         raise ValueError('A package job unexpectedly gained signing identity access')
     identifier = int(os.environ['FIXTURE_ID'])

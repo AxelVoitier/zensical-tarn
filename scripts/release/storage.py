@@ -202,7 +202,11 @@ class Storage:
             matching.extend(item.id for item in batch if item.tag == expected.tag)
             page += 1
         if matching != [expected.id]:
-            raise ValueError('Missing or duplicated storage identity')
+            message = (
+                f'Missing or duplicated {expected.role} storage identity: '
+                f'expected release {expected.id}, observed {matching}'
+            )
+            raise ValueError(message)
 
     def finalisation_plan(self, product: Draft) -> dict[str, object] | None:
         """Read the retained, candidate-bound public plan from independent private history."""

@@ -167,7 +167,13 @@ errors and invalid requests do not count as permission proof.
 The public stage sends unauthenticated requests and requires HTTP 404.
 
 Preparation also creates a separate empty product fixture. Cleanup verifies its
-identity before deletion and observes HTTP 404 afterwards. It then retrieves the
+identity before deletion and observes HTTP 404 afterwards. Immediately after
+creation, preparation compares the coordinator transport's release-list
+snapshot with direct authenticated API responses. It logs only numeric IDs
+and read numbers, then stops on a mismatch. If direct responses omit the new
+draft, it observes up to six fresh listings two seconds apart. These reads
+diagnose visibility; they do not retry creation or relax identity checks.
+Cleanup still runs after a failed visibility probe and then retrieves the
 nonempty record fixture and requires its original bytes to remain unchanged.
 After removing that fixture, it compares the real administrative fingerprint.
 The actual shared record stays unchanged throughout these fixture operations.

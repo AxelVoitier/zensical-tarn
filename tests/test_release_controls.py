@@ -11,6 +11,8 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import cast
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'scripts'))
@@ -53,6 +55,8 @@ class GitHubCommands:
         self.deleted: set[str] = set()
         self.retrieved_history_after_product_deletion = False
         self.corrupt_history = False
+        self.created: dict[int, dict[str, object]] = {}
+        self.hidden_product_reads = 0
 
     def denied(self, argv: list[str]) -> None:
         if self.denied_status is not None:
@@ -64,14 +68,32 @@ class GitHubCommands:
                 ).encode(),
             )
 
-    def call(self, argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
-        endpoint = next(item for item in argv if item.startswith(PREFIX))
+    def call(  # noqa: PLR0912 - Fixed external API response scenarios.
+        self,
+        argv: list[str],
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        endpoint = next(
+            item for item in argv if item.startswith((PREFIX, 'https://uploads.github.com/'))
+        ).removeprefix('https://uploads.github.com/')
         if 'DELETE' in argv:
             self.deleted.add(endpoint.rsplit('/', 1)[1])
             return subprocess.CompletedProcess(argv, 0, b'', b'')
         if 'POST' in argv:
             self.denied(argv)
-            data: object = {'id': 30, 'body': 'PRIVATE-SENTINEL'}
+            if endpoint == PREFIX + '/releases':
+                payload: dict[str, object] = json.loads(cast('bytes', _kwargs['input']))
+                identifier = 20 + len(self.created)
+                self.created[identifier] = {
+                    'id': identifier,
+                    'tag_name': payload['tag_name'],
+                    'target_commitish': payload['target_commitish'],
+                    'body': payload['body'],
+                    'draft': True,
+                }
+                data: object = self.created[identifier]
+            else:
+                data = {'id': 30, 'body': 'PRIVATE-SENTINEL'}
         elif endpoint in (PREFIX + '/releases/20', PREFIX + '/releases/21'):
             identifier = endpoint.rsplit('/', 1)[1]
             if identifier in self.deleted:
@@ -91,7 +113,7 @@ class GitHubCommands:
                     'name': 'controls-proof.json',
                     'size': len(PROOF_BODY),
                     'state': 'uploaded',
-                }
+                },
             ]
         elif endpoint == PREFIX + '/releases/assets/30':
             self.retrieved_history_after_product_deletion = '21' in self.deleted
@@ -110,6 +132,11 @@ class GitHubCommands:
         elif endpoint == PREFIX + '/git/ref/tags/release-records':
             data = {'object': {'sha': SOURCE, 'type': 'commit'}}
         elif endpoint == PREFIX + '/releases?per_page=100&page=1':
+            created = dict(self.created)
+            product = int(ENV['PRODUCT_FIXTURE_ID'])
+            if product in created and self.hidden_product_reads:
+                self.hidden_product_reads -= 1
+                del created[product]
             data = [
                 {
                     'id': 10,
@@ -117,7 +144,8 @@ class GitHubCommands:
                     'target_commitish': SOURCE,
                     'draft': True,
                     'body': RECORD_BODY,
-                }
+                },
+                *created.values(),
             ]
         else:
             data = []
@@ -125,10 +153,38 @@ class GitHubCommands:
 
 
 class HostedProbeTests(unittest.TestCase):
+    def test_prepare_reports_created_draft_visibility_without_private_contents(self) -> None:
+        with TemporaryDirectory() as directory:
+            output = self.invoke(
+                'prepare',
+                GitHubCommands(None),
+                {'GITHUB_OUTPUT': str(Path(directory) / 'outputs')},
+            )
+        self.assertIn('"snapshot_ids": [21]', output)
+        self.assertIn('"fresh_ids": [21]', output)
+        self.assertNotIn(PROOF_BODY, output)
+        self.assertNotIn(RECORD_BODY, output)
+        self.assertNotIn('PRIVATE-SENTINEL', output)
+
+    def test_missing_new_draft_is_reported_without_weakening_identity_checks(self) -> None:
+        service = GitHubCommands(None)
+        service.hidden_product_reads = 1
+        with TemporaryDirectory() as directory, self.assertRaises(SystemExit):
+            self.invoke(
+                'prepare',
+                service,
+                {'GITHUB_OUTPUT': str(Path(directory) / 'outputs')},
+            )
+        self.assertIn('"snapshot_ids": []', self.output)
+        self.assertIn('"fresh_ids": [21]', self.output)
+        self.assertNotIn(PROOF_BODY, self.output)
+        self.assertNotIn(RECORD_BODY, self.output)
+
     def test_reusable_package_checks_never_request_release_write_authority(self) -> None:
         workflow = Path(__file__).resolve().parent.parent / '.github/workflows/check.yml'
         self.assertNotRegex(
-            workflow.read_text(), re.compile(r'^\s+contents:\s+write\b', re.MULTILINE)
+            workflow.read_text(),
+            re.compile(r'^\s+contents:\s+write\b', re.MULTILINE),
         )
 
     def invoke(
@@ -144,7 +200,10 @@ class HostedProbeTests(unittest.TestCase):
             patch('subprocess.run', side_effect=service.call),
             contextlib.redirect_stdout(stream),
         ):
-            check_release_controls.main()
+            try:
+                check_release_controls.main()
+            finally:
+                self.output = stream.getvalue()
         return stream.getvalue()
 
     def test_cleanup_requires_observed_absence_not_forbidden_access(self) -> None:
