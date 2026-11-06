@@ -7,12 +7,17 @@ import json
 import os
 import re
 import subprocess
-from typing import cast
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
+from copy import deepcopy
+from typing import TypeVar, cast
 from urllib.parse import quote
 
 from release.candidate import ARCHIVE_MAX_BYTES
 from release.sdist import REPOSITORY
 from release.storage import Asset, Release
+
+T = TypeVar('T')
 
 
 def number(value: object) -> int:
@@ -65,6 +70,43 @@ def asset_info(value: object) -> Asset:
 class GitHubAPI:
     """Use explicit job-token authentication and fixed repository/host endpoints."""
 
+    def __init__(self) -> None:
+        self._reads: dict[tuple[str, bool], tuple[object, Callable[[], object]]] | None = None
+
+    @contextmanager
+    def consistent_reads(self) -> Generator[None]:
+        """Reuse decoded facts within one operation, with fresh checks at its boundaries.
+
+        Every write checks all observed facts and invalidates affected collection
+        pages before sending its request. A successful read-only result also
+        requires a fresh check. Nothing survives a command or approval wait.
+        """
+        if self._reads is not None:
+            raise ValueError('Nested storage read scopes are unsupported')
+        self._reads = {}
+        try:
+            yield
+            self._verify_reads()
+        finally:
+            self._reads = None
+
+    def _verify_reads(self) -> None:
+        if self._reads is not None:
+            for expected, query in self._reads.values():
+                if query() != expected:
+                    raise ValueError('Remote release state changed during operation')
+
+    def _read(self, key: tuple[str, bool], query: Callable[[], T]) -> T:
+        if self._reads is None:
+            return query()
+        if key not in self._reads:
+            self._reads[key] = (query(), query)
+        # Callers may change returned lists without changing the checked snapshot.
+        return deepcopy(cast('T', self._reads[key][0]))
+
+    def _decoded(self, endpoint: str, decode: Callable[[bytes], T], *, binary: bool = False) -> T:
+        return self._read((endpoint, binary), lambda: decode(self.request(endpoint, binary=binary)))
+
     def request(
         self,
         endpoint: str,
@@ -72,6 +114,7 @@ class GitHubAPI:
         data: bytes | None = None,
         binary: bool = False,
         json_body: bool = False,
+        changes: str | None = None,
     ) -> bytes:
         """Never put a credential in arguments, Git metadata, logs or filenames."""
         if not (os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')):
@@ -88,6 +131,16 @@ class GitHubAPI:
             'X-GitHub-Api-Version: 2026-03-10',
         ]
         if data is not None:
+            self._verify_reads()
+            if self._reads is not None:
+                # The only supported writes create releases or append assets.
+                # All retained facts still receive fresh comparisons at every
+                # barrier. Unknown write types conservatively discard everything.
+                self._reads = {
+                    key: value
+                    for key, value in self._reads.items()
+                    if changes is not None and not key[0].startswith(changes)
+                }
             argv.extend(
                 [
                     '--method',
@@ -128,12 +181,16 @@ class GitHubAPI:
                     f'repos/{REPOSITORY}/releases',
                     data=data,
                     json_body=True,
+                    changes=f'repos/{REPOSITORY}/releases?',
                 ),
             ),
         )
 
     def tag_identity(self, tag: str) -> tuple[str, str, str]:
         """Resolve actual ref and peeled commit rather than target_commitish alone."""
+        return self._read((f'tag:{tag}', False), lambda: self._resolve_tag(tag))
+
+    def _resolve_tag(self, tag: str) -> tuple[str, str, str]:
         if not (tag == 'release-records' or re.fullmatch(r'v[0-9][A-Za-z0-9.]*', tag)):
             raise ValueError('Unexpected storage tag')
         ref = document(
@@ -156,42 +213,60 @@ class GitHubAPI:
 
     def repository_id(self) -> str:
         """Bind the repository name to its retained numeric identity."""
-        return str(number(document(json.loads(self.request(f'repos/{REPOSITORY}'))).get('id')))
+        return self._decoded(
+            f'repos/{REPOSITORY}',
+            lambda data: str(number(document(json.loads(data)).get('id'))),
+        )
 
     def release(self, identifier: int) -> Release:
         """Read a retained release ID through the authenticated API."""
-        return release_info(
-            json.loads(self.request(f'repos/{REPOSITORY}/releases/{number(identifier)}')),
+        return self._decoded(
+            f'repos/{REPOSITORY}/releases/{number(identifier)}',
+            lambda data: release_info(json.loads(data)),
         )
 
     def releases_page(self, page: int) -> list[Release]:
         """Return one page; the policy layer reads through the final empty page."""
-        data: object = json.loads(
-            self.request(f'repos/{REPOSITORY}/releases?per_page=100&page={number(page)}'),
+
+        def decode(raw: bytes) -> list[Release]:
+            data: object = json.loads(raw)
+            if not isinstance(data, list):
+                raise TypeError('Expected release page')
+            return [release_info(item) for item in cast('list[object]', data)]
+
+        return self._decoded(
+            f'repos/{REPOSITORY}/releases?per_page=100&page={number(page)}',
+            decode,
         )
-        if not isinstance(data, list):
-            raise TypeError('Expected release page')
-        return [release_info(item) for item in cast('list[object]', data)]
 
     def assets_page(self, release: int, page: int) -> list[Asset]:
         """Do not rely on the possibly truncated assets embedded in a release."""
         endpoint = (
             f'repos/{REPOSITORY}/releases/{number(release)}/assets?per_page=100&page={number(page)}'
         )
-        data: object = json.loads(self.request(endpoint))
-        if not isinstance(data, list):
-            raise TypeError('Expected asset page')
-        return [asset_info(item) for item in cast('list[object]', data)]
+
+        def decode(raw: bytes) -> list[Asset]:
+            data: object = json.loads(raw)
+            if not isinstance(data, list):
+                raise TypeError('Expected asset page')
+            return [asset_info(item) for item in cast('list[object]', data)]
+
+        return self._decoded(endpoint, decode)
 
     def asset(self, identifier: int) -> Asset:
         """Read exact metadata without trusting caller-provided URLs."""
-        return asset_info(
-            json.loads(self.request(f'repos/{REPOSITORY}/releases/assets/{number(identifier)}')),
+        return self._decoded(
+            f'repos/{REPOSITORY}/releases/assets/{number(identifier)}',
+            lambda data: asset_info(json.loads(data)),
         )
 
     def download(self, identifier: int) -> bytes:
         """The authenticated binary endpoint handles download redirects via gh."""
-        return self.request(f'repos/{REPOSITORY}/releases/assets/{number(identifier)}', binary=True)
+        return self._decoded(
+            f'repos/{REPOSITORY}/releases/assets/{number(identifier)}',
+            lambda data: data,
+            binary=True,
+        )
 
     def upload(self, release: int, name: str, data: bytes) -> None:
         """Create once by release ID; no --clobber, edit or delete operation exists."""
@@ -204,4 +279,8 @@ class GitHubAPI:
             f'https://uploads.github.com/repos/{REPOSITORY}/releases/'
             f'{number(release)}/assets?name={quote(name, safe="")}'
         )
-        self.request(endpoint, data=data)
+        self.request(
+            endpoint,
+            data=data,
+            changes=f'repos/{REPOSITORY}/releases/{number(release)}/assets?',
+        )

@@ -18,7 +18,7 @@ import test_reconciliation as fixtures
 from check_testpypi import install
 from release import coordinator
 from release.reconciliation import Reconciler
-from release.storage import Release, Storage
+from release.storage import Storage
 from release.testpypi import PreparedDestination, publish, upload_attestations
 
 
@@ -239,22 +239,15 @@ class CoordinatorPublicationChecks(unittest.TestCase):
         admitted = fixture.run_cli('admit', '--output', str(receipt))
         candidate = fixture.make_candidate()
 
-        # New product creation is an external API response fixture.
-        def create_product(tag: str, target: str, body: str) -> Release:
-            product = Release(20, tag, target, body, draft=True)
-            fixture.service.releases[20] = product
-            return product
-
-        with patch.object(coordinator.GitHubAPI, 'create_product', side_effect=create_product):
-            retained = fixture.run_cli(
-                'retain',
-                '--head',
-                str(admitted['head']),
-                '--candidate-dir',
-                str(candidate),
-                '--candidate-digest',
-                fixture.candidate_digest,
-            )
+        retained = fixture.run_cli(
+            'retain',
+            '--head',
+            str(admitted['head']),
+            '--candidate-dir',
+            str(candidate),
+            '--candidate-digest',
+            fixture.candidate_digest,
+        )
         admitted['head'] = retained['admission-head']
         publisher = fixtures.Publisher(
             'AxelVoitier/zensical-tarn',

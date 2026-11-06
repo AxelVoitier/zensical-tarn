@@ -549,6 +549,18 @@ The numeric repository identity must match the platform context.
 The administrative draft must already exist with its retained ID and private role.
 Missing or changed administrative history stops work.
 
+Within one CLI command, repeated authenticated reads reuse the same decoded
+metadata and bytes. Before each write, the transport rereads every observed
+value and stops if any value changed. Before sending the request it invalidates
+the collection pages affected by that write, so an uncertain response is
+reconciled against a fresh listing. Other observations remain subject to the
+same fresh checks before every subsequent write and successful command exit.
+A command also checks its final snapshot before returning success or exposing
+job outputs. Snapshots never carry across commands or approval waits.
+Only metadata used by storage policy is compared; download counters do not
+change a release's identity. This reduces repeated history traversals without
+relying on cached state to authorise a write.
+
 For separately authorized hosted queue tests, set `TARN_RELEASE_HOSTED_PROOF` to
 `true` only for the controlled test period. Preparation still needs its existing
 enable variable. Registry publication and public finalization remain disabled.

@@ -12,8 +12,9 @@ import shutil
 import subprocess
 import sys
 import unittest
+from collections import Counter
 from contextlib import redirect_stderr, redirect_stdout
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -80,6 +81,7 @@ class CoordinatorChecks(unittest.TestCase):
         self.registry: dict[str, object] = {'urls': []}
         self.output = ''
         self.cancel_owner: int | None = None
+        self.api_page_size = 1
         self.real_process = subprocess.run
 
     def git(self, *args: str) -> str:
@@ -114,6 +116,24 @@ class CoordinatorChecks(unittest.TestCase):
             result = {'object': {'sha': target, 'type': kind}}
         elif endpoint.startswith('/git/tags/'):
             result = {'object': {'sha': self.commit, 'type': 'commit'}}
+        elif endpoint == '/releases':
+            data = json.loads(kwargs['input'])  # type: ignore[arg-type]
+            self.assertIn('--method', argv)
+            self.assertIn('POST', argv)
+            self.assertTrue(data['draft'] is True)
+            self.assertTrue(data['prerelease'] is True)
+            item = self.service.create_product(
+                data['tag_name'],
+                data['target_commitish'],
+                data['body'],
+            )
+            result = {
+                'id': item.id,
+                'tag_name': item.tag,
+                'target_commitish': item.target,
+                'body': item.body,
+                'draft': item.draft,
+            }
         elif endpoint.startswith('/releases?'):
             page = int(endpoint.rsplit('=', 1)[1])
             result = [
@@ -124,12 +144,20 @@ class CoordinatorChecks(unittest.TestCase):
                     'body': item.body,
                     'draft': item.draft,
                 }
-                for item in self.service.releases_page(page)
+                for item in list(self.service.releases.values())[
+                    (page - 1) * self.api_page_size : page * self.api_page_size
+                ]
             ]
         elif '/assets?per_page=' in endpoint:
             owner = int(endpoint.split('/')[2])
             page = int(endpoint.rsplit('=', 1)[1])
-            result = [asdict(item) for item in self.service.assets_page(owner, page)]
+            assets = [
+                asset for release, asset, _data in self.service.assets.values() if release == owner
+            ]
+            result = [
+                asdict(item)
+                for item in assets[(page - 1) * self.api_page_size : page * self.api_page_size]
+            ]
         elif endpoint.startswith('/releases/assets/'):
             identifier = int(endpoint.rsplit('/', 1)[1])
             if 'Accept: application/octet-stream' in argv:
@@ -311,6 +339,7 @@ class CoordinatorChecks(unittest.TestCase):
         )
         receipt = self.directory / 'receipt.json'
         self.run_cli('admit', '--output', str(receipt))
+        self.run_cli('guard', '--receipt', str(receipt))
         candidate = self.make_candidate()
         self.run_cli(
             'retain',
@@ -333,6 +362,106 @@ class CoordinatorChecks(unittest.TestCase):
         self.registry = {'urls': [{'filename': 'outside-writer.whl'}]}
         self.run_cli('recheck', '--head', str(checkpoint['head']), expected=1)
         self.assertIn('changed', self.output)
+
+    def test_preparation_and_approval_fit_repository_job_token_budget(self) -> None:
+        # Use the requested API page size for the budget; other scenarios force
+        # one item per page to exercise pagination with small fixtures.
+        self.api_page_size = 100
+        storage = Storage(self.service, self.service.admin)
+        for version in ('1.2.0', '1.2.1', '1.2.2'):
+            first = storage.append(
+                Event(version, None, self.commit, '99', '1', 1, 'admitted', None, {}),
+            )
+            storage.append(
+                Event(version, None, self.commit, '99', '1', 2, 'stopped', first.digest, {}),
+            )
+        calls: Counter[str] = Counter()
+        original = self.process
+
+        def count(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if argv[:2] == ['gh', 'api']:
+                calls[argv[4]] += 1
+            return original(argv, **kwargs)
+
+        self.process = count
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        self.run_cli('guard', '--receipt', str(receipt))
+        candidate = self.make_candidate()
+        self.run_cli(
+            'retain',
+            '--receipt',
+            str(receipt),
+            '--candidate-dir',
+            str(candidate),
+            '--candidate-digest',
+            self.candidate_digest,
+        )
+        checkpoint = self.run_cli('checkpoint')
+        self.run_cli('recheck', '--head', str(checkpoint['head']))
+        self.run_cli('report', '--outcome', 'success')
+        # GitHub documents 1,000 repository GITHUB_TOKEN requests per hour.
+        # Include the guard, retention, approval and report, plus another version's history.
+        self.assertLess(sum(calls.values()), 1000, dict(calls))
+
+    def test_changed_storage_stops_before_upload_or_success_output(self) -> None:
+        original = self.process
+        administrative = self.service.releases[10]
+        for stage in ('admit', 'guard'):
+            with self.subTest(stage=stage):
+                receipt = self.directory / 'receipt.json'
+                if stage == 'guard':
+                    self.run_cli('admit', '--output', str(receipt))
+                before = dict(self.service.assets)
+                reads = 0
+
+                def changed(
+                    argv: list[str],
+                    **kwargs: object,
+                ) -> subprocess.CompletedProcess[bytes]:
+                    nonlocal reads
+                    if argv[:2] == ['gh', 'api'] and argv[4].endswith('/releases/10'):
+                        reads += 1
+                        if reads > 1:
+                            self.service.releases[10] = replace(administrative, draft=False)
+                    return original(argv, **kwargs)
+
+                self.process = changed
+                args = (
+                    ('--output', str(receipt)) if stage == 'admit' else ('--receipt', str(receipt))
+                )
+                self.run_cli(stage, *args, expected=1)
+                self.assertIn('changed', self.output)
+                self.assertNotIn('"action"', self.output)
+                self.assertEqual(self.service.assets, before)
+                if stage == 'admit':
+                    self.assertFalse(receipt.exists())
+                self.service.releases[10] = administrative
+                self.process = original
+
+    def test_lost_upload_responses_reconcile_fresh_state_despite_download_counters(self) -> None:
+        self.service.upload_outcome = 'lost-response'
+        original = self.process
+        counter = 0
+
+        def download_activity(
+            argv: list[str],
+            **kwargs: object,
+        ) -> subprocess.CompletedProcess[bytes]:
+            nonlocal counter
+            response = original(argv, **kwargs)
+            if argv[:2] == ['gh', 'api'] and 'Accept: application/octet-stream' not in argv:
+                value = json.loads(response.stdout)
+                if isinstance(value, dict):
+                    counter += 1
+                    value['download_count'] = counter
+                    value['updated_at'] = str(counter)
+                    response.stdout = json.dumps(value).encode()
+            return response
+
+        self.process = download_activity
+        self.retain_candidate()
+        self.assertEqual(self.run_cli('checkpoint')['status'], 'pass')
 
     def test_new_dispatch_recovers_verified_originals_without_rebuilding(self) -> None:
         receipt = self.directory / 'receipt.json'

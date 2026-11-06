@@ -407,11 +407,7 @@ def hosted_check(args: argparse.Namespace, storage: Storage) -> dict[str, object
         raise ValueError('Checkpoint head required after approval')
     if args.stage == 'checkpoint' and args.head is not None:
         raise ValueError('Checkpoint creation does not accept a previous head')
-    result = checkpoint(args.root, storage, args.head)
-    if os.environ.get('GITHUB_OUTPUT'):
-        with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
-            stream.write(f'head={result["head"]}\n')
-    return result
+    return checkpoint(args.root, storage, args.head)
 
 
 def report(root: Path, storage: Storage, outcome: str) -> dict[str, object]:
@@ -617,6 +613,19 @@ def testpypi(  # noqa: PLR0917 - Explicit trusted service boundaries for local a
     return publish(reconciler, destination, publisher, output)
 
 
+def execute_stage(args: argparse.Namespace, storage: Storage) -> dict[str, object]:
+    """Execute a command before the transport's final consistency check."""
+    if args.stage in ('checkpoint', 'recheck'):
+        return hosted_check(args, storage)
+    if args.stage == 'report':
+        return report(args.root, storage, args.outcome)
+    if args.stage == 'admit':
+        if args.output is None:
+            raise ValueError('Admission output path required')
+        return admit(args.root, storage)
+    return selected_stage(args, storage)
+
+
 def main() -> int:
     """Trusted coordinator CLI; preparation never selects instructions using a tag input."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -675,28 +684,24 @@ def main() -> int:
             )
         if args.repository_id != os.environ['GITHUB_REPOSITORY_ID']:
             raise ValueError('Repository numeric identity differs from retained setup')
-        storage = Storage(
-            GitHubAPI(),
-            Draft(
-                args.admin_id,
-                'administrative',
-                'release-records',
-                args.admin_target,
-                args.repository_id,
-            ),
-        )
-        result: dict[str, object]
-        if args.stage in ('checkpoint', 'recheck'):
-            result = hosted_check(args, storage)
-        elif args.stage == 'report':
-            result = report(args.root, storage, args.outcome)
-        elif args.stage == 'admit':
-            result = admit(args.root, storage)
-            if args.output is None:
-                raise ValueError('Admission output path required')
+        api = GitHubAPI()
+        with api.consistent_reads():
+            storage = Storage(
+                api,
+                Draft(
+                    args.admin_id,
+                    'administrative',
+                    'release-records',
+                    args.admin_target,
+                    args.repository_id,
+                ),
+            )
+            result = execute_stage(args, storage)
+        if args.stage == 'admit':
             args.output.write_bytes(canonical(result))
-        else:
-            result = selected_stage(args, storage)
+        if args.stage in ('checkpoint', 'recheck') and os.environ.get('GITHUB_OUTPUT'):
+            with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as stream:
+                stream.write(f'head={result["head"]}\n')
         if args.stage == 'admit' and os.environ.get('GITHUB_OUTPUT'):
             source = selected_source(args.root)
             outputs = {
