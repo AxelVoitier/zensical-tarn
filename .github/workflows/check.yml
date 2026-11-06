@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/check.yml'
       - '.github/actions/**'
+      - '.github/tests/**'
       - '.github/workflows/release-preparation.yml'
       - '.gitignore'
       - 'pyproject.toml'
@@ -110,6 +111,7 @@ jobs:
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
       - run: python scripts/build_css.py --check
       - run: python -m unittest discover -s tests -v
+      - run: python -m unittest discover -s .github/tests -v
       # The default build creates an sdist, then builds the wheel from that archive.
       - name: Build checkout artifacts for ordinary checks
         if: inputs.candidate-artifact-id == ''

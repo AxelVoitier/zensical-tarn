@@ -224,6 +224,8 @@ jobs:
 
   hosted-approval:
     needs: hosted-checkpoint
+    # A skipped prepare/resume alternative propagates through the whole chain.
+    if: "!cancelled() && needs.hosted-checkpoint.result == 'success'"
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: pypi
@@ -234,6 +236,9 @@ jobs:
 
   hosted-recheck:
     needs: [hosted-checkpoint, hosted-approval]
+    if: >-
+      !cancelled() && needs.hosted-checkpoint.result == 'success' &&
+      needs.hosted-approval.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -398,7 +403,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           OUTCOME: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
-        run: >-
-          python -I scripts/release/coordinator.py report --root .
-          --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET"
-          --repository-id "$REPOSITORY_ID" --outcome "$OUTCOME"
+          HOSTED_PROOF_REQUIRED: ${{ vars.TARN_RELEASE_HOSTED_PROOF == 'true' && (needs.resolve.outputs.action == 'prepare' || needs.resolve.outputs.action == 'resume') }}
+          HOSTED_RECHECK_RESULT: ${{ needs.hosted-recheck.result }}
+        run: |
+          missing_proof=false
+          if [ "$HOSTED_PROOF_REQUIRED" = true ] && [ "$HOSTED_RECHECK_RESULT" != success ]; then
+            missing_proof=true
+            OUTCOME=failure
+          fi
+          python -I scripts/release/coordinator.py report --root . \
+            --admin-id "$RECORD_ID" --admin-target "$RECORD_TARGET" \
+            --repository-id "$REPOSITORY_ID" --outcome "$OUTCOME"
+          if [ "$missing_proof" = true ]; then
+            echo 'Required hosted approval/recheck did not complete successfully.' >&2
+            exit 1
+          fi

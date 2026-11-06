@@ -95,7 +95,8 @@ detached = true
 css = "python scripts/build_css.py --check"
 generate-css = "python scripts/build_css.py"
 unit = "python -m unittest discover -s tests -v"
-all = ["css", "unit"]
+workflow = "python -m unittest discover -s .github/tests -v"
+all = ["css", "unit", "workflow"]
 
 [tool.hatch.envs.typing]
 python = "3.12"

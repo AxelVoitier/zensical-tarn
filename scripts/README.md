@@ -99,6 +99,10 @@ checks. The detached check environment needs no third-party Python packages;
 the tag tests require Git on PATH. `hatch run release:check --dist dist/v1.0.0 --tag v1.0.0`
 rechecks existing tagged archives without building or uploading them.
 
+`hatch run check:workflow` runs repository workflow regressions from `.github/tests`.
+It is also included in `check:all` and requires the checkout's workflow files.
+These local scheduling models do not replace hosted approval and queue proof.
+
 ## Standalone source archives
 
 For permission and approval checks, use the separately authorised
