@@ -57,6 +57,8 @@ class GitHubCommands:
         self.corrupt_history = False
         self.created: dict[int, dict[str, object]] = {}
         self.hidden_product_reads = 0
+        self.hide_product_after_confirmation = False
+        self.product_listing_reads = 0
 
     def denied(self, argv: list[str]) -> None:
         if self.denied_status is not None:
@@ -134,9 +136,13 @@ class GitHubCommands:
         elif endpoint == PREFIX + '/releases?per_page=100&page=1':
             created = dict(self.created)
             product = int(ENV['PRODUCT_FIXTURE_ID'])
-            if product in created and self.hidden_product_reads:
-                self.hidden_product_reads -= 1
-                del created[product]
+            if product in created:
+                self.product_listing_reads += 1
+                if self.hidden_product_reads or (
+                    self.hide_product_after_confirmation and self.product_listing_reads > 1
+                ):
+                    self.hidden_product_reads = max(0, self.hidden_product_reads - 1)
+                    del created[product]
             data = [
                 {
                     'id': 10,
@@ -168,17 +174,27 @@ class HostedProbeTests(unittest.TestCase):
 
     def test_missing_new_draft_is_reported_without_weakening_identity_checks(self) -> None:
         service = GitHubCommands(None)
-        service.hidden_product_reads = 1
-        with TemporaryDirectory() as directory, self.assertRaises(SystemExit):
+        service.hide_product_after_confirmation = True
+        with TemporaryDirectory() as directory, patch('time.sleep'), self.assertRaises(SystemExit):
             self.invoke(
                 'prepare',
                 service,
                 {'GITHUB_OUTPUT': str(Path(directory) / 'outputs')},
             )
-        self.assertIn('"snapshot_ids": []', self.output)
-        self.assertIn('"fresh_ids": [21]', self.output)
+        self.assertIn('"snapshot_ids": [21]', self.output)
+        self.assertIn('"fresh_ids": []', self.output)
         self.assertNotIn(PROOF_BODY, self.output)
         self.assertNotIn(RECORD_BODY, self.output)
+
+    def test_visibility_timeout_preserves_fixture_identity_for_cleanup(self) -> None:
+        service = GitHubCommands(None)
+        service.hidden_product_reads = 1000
+        with TemporaryDirectory() as directory, patch('time.sleep'):
+            destination = Path(directory) / 'outputs'
+            with self.assertRaises(SystemExit):
+                self.invoke('prepare', service, {'GITHUB_OUTPUT': str(destination)})
+            self.assertIn('product_fixture_id=21\n', destination.read_text())
+        self.assertEqual(len(service.created), 2)
 
     def test_reusable_package_checks_never_request_release_write_authority(self) -> None:
         workflow = Path(__file__).resolve().parent.parent / '.github/workflows/check.yml'

@@ -567,6 +567,15 @@ Only metadata used by storage policy is compared; download counters do not
 change a release's identity. This reduces repeated history traversals without
 relying on cached state to authorise a write.
 
+After a successful product-draft creation, the transport confirms that exactly
+that release appears in the full listing before retaining a validation snapshot.
+A missing entry triggers at most six listing reads, two seconds apart.
+Each retry discards the missing listing. Creation is never repeated.
+A conflicting entry stops immediately; persistent invisibility stops with the
+created release ID for inspection. Normal fresh comparisons still apply after
+confirmation. Disposable probes record the created ID before this wait so
+cleanup can inspect the fixture even if confirmation fails.
+
 For separately authorized hosted queue tests, set `TARN_RELEASE_HOSTED_PROOF` to
 `true` only for the controlled test period. Preparation still needs its existing
 enable variable. Registry publication and public finalization remain disabled.

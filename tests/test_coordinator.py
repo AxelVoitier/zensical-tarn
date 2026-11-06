@@ -82,6 +82,8 @@ class CoordinatorChecks(unittest.TestCase):
         self.output = ''
         self.cancel_owner: int | None = None
         self.api_page_size = 1
+        self.created_product_id: int | None = None
+        self.hidden_product_reads = 0
         self.real_process = subprocess.run
 
     def git(self, *args: str) -> str:
@@ -127,6 +129,7 @@ class CoordinatorChecks(unittest.TestCase):
                 data['target_commitish'],
                 data['body'],
             )
+            self.created_product_id = item.id
             result = {
                 'id': item.id,
                 'tag_name': item.tag,
@@ -136,6 +139,10 @@ class CoordinatorChecks(unittest.TestCase):
             }
         elif endpoint.startswith('/releases?'):
             page = int(endpoint.rsplit('=', 1)[1])
+            releases = list(self.service.releases.values())
+            if page == 1 and self.created_product_id is not None and self.hidden_product_reads:
+                self.hidden_product_reads -= 1
+                releases = [item for item in releases if item.id != self.created_product_id]
             result = [
                 {
                     'id': item.id,
@@ -144,9 +151,7 @@ class CoordinatorChecks(unittest.TestCase):
                     'body': item.body,
                     'draft': item.draft,
                 }
-                for item in list(self.service.releases.values())[
-                    (page - 1) * self.api_page_size : page * self.api_page_size
-                ]
+                for item in releases[(page - 1) * self.api_page_size : page * self.api_page_size]
             ]
         elif '/assets?per_page=' in endpoint:
             owner = int(endpoint.split('/')[2])
@@ -368,7 +373,7 @@ class CoordinatorChecks(unittest.TestCase):
         # one item per page to exercise pagination with small fixtures.
         self.api_page_size = 100
         storage = Storage(self.service, self.service.admin)
-        for version in ('1.2.0', '1.2.1', '1.2.2'):
+        for version in ('1.1.9', '1.2.0', '1.2.1', '1.2.2'):
             first = storage.append(
                 Event(version, None, self.commit, '99', '1', 1, 'admitted', None, {}),
             )
@@ -403,6 +408,48 @@ class CoordinatorChecks(unittest.TestCase):
         # GitHub documents 1,000 repository GITHUB_TOKEN requests per hour.
         # Include the guard, retention, approval and report, plus another version's history.
         self.assertLess(sum(calls.values()), 1000, dict(calls))
+
+    def test_new_draft_waits_for_listing_visibility_without_repeating_creation(self) -> None:
+        self.api_page_size = 100
+        self.hidden_product_reads = 1
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        candidate = self.make_candidate()
+        with patch('time.sleep'):
+            self.run_cli(
+                'retain',
+                '--receipt',
+                str(receipt),
+                '--candidate-dir',
+                str(candidate),
+                '--candidate-digest',
+                self.candidate_digest,
+            )
+        self.assertEqual(len(self.service.releases), 2)
+        self.assertEqual(self.run_cli('checkpoint')['status'], 'pass')
+
+    def test_persistently_missing_created_draft_stops_without_repeating_creation(self) -> None:
+        self.api_page_size = 100
+        self.hidden_product_reads = 1000
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        candidate = self.make_candidate()
+        waits: list[float] = []
+        with patch('time.sleep', side_effect=waits.append):
+            self.run_cli(
+                'retain',
+                '--receipt',
+                str(receipt),
+                '--candidate-dir',
+                str(candidate),
+                '--candidate-digest',
+                self.candidate_digest,
+                expected=1,
+            )
+        self.assertIn('not visible in listings; inspect before retrying', self.output)
+        self.assertEqual(len(self.service.releases), 2)
+        self.assertFalse(self.service.assets_page(int(str(self.created_product_id)), 1))
+        self.assertLessEqual(sum(waits), 10)
 
     def test_changed_storage_stops_before_upload_or_success_output(self) -> None:
         original = self.process

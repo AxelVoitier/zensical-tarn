@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
@@ -18,6 +19,8 @@ from release.sdist import REPOSITORY
 from release.storage import Asset, Release
 
 T = TypeVar('T')
+CREATE_VISIBILITY_READS = 6
+CREATE_VISIBILITY_INTERVAL_SECONDS = 2
 
 
 def number(value: object) -> int:
@@ -96,6 +99,14 @@ class GitHubAPI:
                 if query() != expected:
                     raise ValueError('Remote release state changed during operation')
 
+    def _invalidate(self, changes: str | None) -> None:
+        if self._reads is not None:
+            self._reads = {
+                key: value
+                for key, value in self._reads.items()
+                if changes is not None and not key[0].startswith(changes)
+            }
+
     def _read(self, key: tuple[str, bool], query: Callable[[], T]) -> T:
         if self._reads is None:
             return query()
@@ -136,11 +147,7 @@ class GitHubAPI:
                 # The only supported writes create releases or append assets.
                 # All retained facts still receive fresh comparisons at every
                 # barrier. Unknown write types conservatively discard everything.
-                self._reads = {
-                    key: value
-                    for key, value in self._reads.items()
-                    if changes is not None and not key[0].startswith(changes)
-                }
+                self._invalidate(changes)
             argv.extend(
                 [
                     '--method',
@@ -163,7 +170,14 @@ class GitHubAPI:
             timeout=120,
         ).stdout
 
-    def create_product(self, tag: str, target: str, body: str) -> Release:
+    def create_product(
+        self,
+        tag: str,
+        target: str,
+        body: str,
+        *,
+        on_created: Callable[[int], None] | None = None,
+    ) -> Release:
         """Create only an unpublished product draft at an existing frozen tag."""
         data = json.dumps(
             {
@@ -175,7 +189,7 @@ class GitHubAPI:
                 'prerelease': True,
             },
         ).encode()
-        return release_info(
+        created = release_info(
             json.loads(
                 self.request(
                     f'repos/{REPOSITORY}/releases',
@@ -185,6 +199,40 @@ class GitHubAPI:
                 ),
             ),
         )
+        # Preserve a known write receipt before any subsequent read can fail.
+        if on_created is not None:
+            on_created(created.id)
+        self._confirm_created_release(created)
+        return created
+
+    def _confirm_created_release(self, created: Release) -> None:
+        """A known successful creation can precede its first release-list response.
+
+        Never keep a missing-list observation as the validation snapshot after
+        our own write. Retry only reads, then retain the confirmed full listing
+        with its normal fresh comparisons before further writes or success.
+        """
+        for attempt in range(CREATE_VISIBILITY_READS):
+            if attempt:
+                self._invalidate(f'repos/{REPOSITORY}/releases?')
+                time.sleep(CREATE_VISIBILITY_INTERVAL_SECONDS)
+            matches: list[Release] = []
+            seen: set[int] = set()
+            page = 1
+            while batch := self.releases_page(page):
+                if seen.intersection(item.id for item in batch):
+                    raise ValueError('Repeated release page after creation')
+                seen.update(item.id for item in batch)
+                matches.extend(item for item in batch if item.tag == created.tag)
+                page += 1
+            if matches == [created]:
+                return
+            if matches:
+                raise ValueError('Created draft conflicts with listed identity')
+        message = (
+            f'Created release {created.id} is not visible in listings; inspect before retrying'
+        )
+        raise ValueError(message)
 
     def tag_identity(self, tag: str) -> tuple[str, str, str]:
         """Resolve actual ref and peeled commit rather than target_commitish alone."""

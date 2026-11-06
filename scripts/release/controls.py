@@ -147,8 +147,12 @@ def prepare(api: GitHubAPI, record: Draft) -> None:
     with api.consistent_reads():
         # Seed the same pre-creation release snapshot as the coordinator.
         Storage(api, record)
-        product = api.create_product(fixture_tag() + '-product', record.target, fixture_body())
-        output('product_fixture_id', product.id)
+        product = api.create_product(
+            fixture_tag() + '-product',
+            record.target,
+            fixture_body(),
+            on_created=lambda identifier: output('product_fixture_id', identifier),
+        )
         if product.id == identifier:
             raise ValueError('Disposable product and record fixtures must be independent')
         fixture(api, product.id, record, product.tag)
