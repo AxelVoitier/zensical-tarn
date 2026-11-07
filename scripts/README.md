@@ -517,7 +517,13 @@ hatch run typing:check scripts/release tests/test_storage.py
 ```
 
 The signature-verifier response fixture exercises candidate policy, not hosted certificate validity.
-Actual token permissions, authenticated draft reads and exclusion of ordinary readers remain pending remote checks.
+Controlled hosted probes verified actual job-token access and denial of anonymous reads and package-job writes.
+The hosted preparation also retained and read back the original archives and evidence with its actual job token.
+These results do not establish registry publication or production readiness.
+Failed CLI requests stop the operation and report a recognised HTTP status when available.
+Rate-limit messages receive an explicit classification. Other errors remain unclassified.
+Captured response bodies and raw CLI error text stay out of diagnostics.
+These local diagnostics do not establish the cause of earlier hosted download failures or authorise a write retry.
 The transport follows the [release API](https://docs.github.com/en/rest/releases/releases),
 [asset API](https://docs.github.com/en/rest/releases/assets) and
 [GitHub CLI API interface](https://cli.github.com/manual/gh_api).
@@ -631,7 +637,11 @@ hatch run typing:check
 The scenarios use real temporary Git repositories and external API response fixtures.
 Signed-statement verification uses an external verifier response fixture.
 It proves policy invocation and rejection behaviour, not a hosted certificate or SLSA level.
-The workflow queue, actual events and original-tag dispatch still need hosted proof.
+Controlled hosted tests observed actual create/push delivery, a duplicate no-op, queue retention through approval, and original-tag recovery.
+The recovered manifest, archives and signed bundles matched the retained originals byte for byte while `main` differed from the tag.
+One final report and a later admission failed while downloading retained history assets.
+The underlying API cause remains unknown. Repeated recovery remains blocked despite the successful byte comparison and approval rechecks.
+Protected tag moves remain blocked. Remote artifact ageing and queue saturation were not tested.
 See [Tagged start and recovery](../RELEASING.md#tagged-start-and-recovery) for operating limits.
 
 ## Partial release reconciliation

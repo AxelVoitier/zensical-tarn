@@ -3,9 +3,11 @@
 For an engine dependency change, first follow
 [Update Tarn to a new Zensical version](UPGRADING_ZENSICAL.md).
 
-The tagged coordinator is implemented for local verification. Hosted activation,
-registry uploads and final GitHub publication remain disabled pending separate
-setup and remote proof. The existing `1.0.0` files and tag are outside this work.
+The tagged coordinator passed controlled hosted preparation, storage and approval-wait tests.
+Original-tag file retrieval passed, but one final report and a later admission failed on history-asset downloads.
+The underlying API cause is not yet established. Repeated recovery remains blocked.
+Normal activation, registry uploads and final GitHub publication remain disabled outside separately authorised tests.
+The existing `1.0.0` files and tag are outside this work.
 The manual procedure below records the earlier release path.
 
 ## Tagged start and recovery
@@ -16,11 +18,23 @@ The coordinator uses the instructions in the selected product tag.
 It rejects dispatch from `main` with an old tag supplied as data.
 Keep `workflow_dispatch` available on the default branch so historical tags remain selectable.
 
-After hosted setup and proof, the intended normal start is website tag creation.
+After separately authorised setup, try website tag creation first.
 The website route must persist the tag without publishing a GitHub release.
-Actual website events and permitted tag-update delivery remain unproven.
 Use the remote-tag CLI fallback only if the website route proves unavailable.
+The controlled test used that fallback after the maintainer reported that the website required release publication.
+Actual website events remain unproven. Active tag protections block tag-update tests.
 Do not recreate or move `v1.0.0` to test this process.
+
+For the fallback, choose an unused `TAG` and the exact reviewed `FROZEN_COMMIT` already pushed to GitHub.
+Replace both placeholders before running this command:
+
+```bash
+gh api --method POST repos/AxelVoitier/zensical-tarn/git/refs -f ref=refs/tags/TAG -f sha=FROZEN_COMMIT
+```
+
+This creates the remote tag without publishing a release.
+Read back the exact ref and inspect the resulting workflow runs before taking further action.
+Never retry an uncertain creation blindly or move an existing protected tag.
 
 The coordinator accepts tag `create` and tag-filtered `push` events.
 It validates the complete supported version format and excludes administrative tags.
@@ -40,6 +54,9 @@ The example selects the original tag as the workflow ref.
 Do not execute it until setup and remote tests are authorised.
 Resume retrieves and verifies originals and history without building archives or regenerating build evidence.
 It does not depend on ordinary reruns or temporary Actions artifacts.
+The [controlled original-tag recovery](https://github.com/AxelVoitier/zensical-tarn/actions/runs/42314811453)
+retrieved the exact retained manifest, archives and signed bundles while `main` differed from the selected tag.
+Temporary-file expiry has a separate local simulation. The hosted test did not wait for remote artifacts to expire.
 Future PyPI uploads on resume still require fresh production approval.
 Approval and publication helpers have local tests. Their hosted adapters remain disabled.
 
@@ -50,20 +67,22 @@ If no originals ever existed, inspect the retained history and both indexes firs
 Under pre-upload rules, a deliberate full preparation uses the original ref and `-f mode=prepare`.
 Lost originals or required evidence must not be replaced for an existing candidate.
 
-All coordinator runs share one fixed queue through completion and future approval waits.
+All coordinator runs share one fixed queue through completion and approval waits.
 The configuration uses `cancel-in-progress: false` and `queue: max`.
 GitHub documents a limit of 100 pending runs per group.
 If a request exceeds the limit, inspect current state before starting a deliberate new request.
 Queue order is not guaranteed.
 The coordinator rechecks source, tag, history and destinations before advancing.
 Manual or API changes outside the queue can stop an attempt.
-Hosted queue scheduling and approval-wait behaviour remain pending remote proof.
+A controlled hosted run verified the queue through a no-upload approval wait and the post-approval state comparison.
+The duplicate event and original-tag recovery request remained pending throughout that wait.
+See [the preparation run](https://github.com/AxelVoitier/zensical-tarn/actions/runs/42291031131).
 See [GitHub concurrency controls](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 The activation switch `TARN_RELEASE_PREPARATION_ENABLED` defaults to disabled.
 Its retained storage configuration needs separately authorised setup.
 The coordinator now connects verified builder outputs to product-draft storage and verified read-back.
-That wiring remains unproven on GitHub until the authorised hosted tests.
+The controlled hosted preparation verified that storage wiring with actual job tokens.
 The isolated resume path can consume recovery copies already retained by the storage helper.
 No current coordinator job uploads packages or publishes a GitHub release.
 The dedicated `testpypi` publisher job has a hard disable and its CLI refuses hosted uploads.

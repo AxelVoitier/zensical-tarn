@@ -70,6 +70,17 @@ def asset_info(value: object) -> Asset:
     )
 
 
+class APIRequestError(subprocess.CalledProcessError):
+    """Preserve permission-check inputs while limiting printed diagnostics."""
+
+    def __init__(self, error: subprocess.CalledProcessError, message: str) -> None:
+        super().__init__(error.returncode, error.cmd, output=error.output, stderr=error.stderr)
+        self.message = message
+
+    def __str__(self) -> str:
+        return self.message
+
+
 class GitHubAPI:
     """Use explicit job-token authentication and fixed repository/host endpoints."""
 
@@ -162,13 +173,30 @@ class GitHubAPI:
                     f'Content-Length: {len(data)}',
                 ],
             )
-        return subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.
-            argv,
-            input=data,
-            capture_output=True,
-            check=True,
-            timeout=120,
-        ).stdout
+        try:
+            return subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.
+                argv,
+                input=data,
+                capture_output=True,
+                check=True,
+                timeout=120,
+            ).stdout
+        except subprocess.CalledProcessError as error:
+            # Report only recognised facts, never captured bodies or raw stderr.
+            captured = error.stderr or b''
+            diagnostic = (
+                captured.decode(errors='replace') if isinstance(captured, bytes) else str(captured)
+            )
+            status = re.search(r'\bHTTP ([1-5][0-9]{2})\b', diagnostic)
+            http = f'HTTP {status[1]}' if status else 'HTTP status unavailable'
+            reason = (
+                'rate limited' if 'rate limit' in diagnostic.lower() else 'unclassified CLI error'
+            )
+            message = (
+                f'GitHub API request failed: {endpoint}; exit {error.returncode}; {http}; {reason}'
+            )
+            # Permission probes still inspect the original status and stderr.
+            raise APIRequestError(error, message) from None
 
     def create_product(
         self,

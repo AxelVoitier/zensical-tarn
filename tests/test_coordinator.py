@@ -261,6 +261,31 @@ class CoordinatorChecks(unittest.TestCase):
         self.run_cli('guard', '--receipt', str(receipt), expected=1)
         self.assertIn('Stale attempt', self.output)
 
+    def test_api_failure_reports_status_without_exposing_captured_error_text(self) -> None:
+        original = self.process
+        for stderr, status, reason in (
+            (b'gh: API rate limit exceeded (HTTP 403)', 'HTTP 403', 'rate limited'),
+            (b'gh: Bad Gateway (HTTP 502)', 'HTTP 502', 'unclassified CLI error'),
+            (b'gh: connection failed', 'HTTP status unavailable', 'unclassified CLI error'),
+        ):
+            def process(
+                argv: list[str], failure: bytes = stderr, **kwargs: object,
+            ) -> subprocess.CompletedProcess[bytes]:
+                if argv[0] == 'gh':
+                    raise subprocess.CalledProcessError(
+                        1, argv, output=b'private response body',
+                        stderr=failure + b'\nfixture-token private details',
+                    )
+                return original(argv, **kwargs)
+
+            with self.subTest(status=status), patch.object(self, 'process', side_effect=process):
+                self.run_cli('admit', '--output', str(self.directory / 'receipt.json'), expected=1)
+                self.assertIn(status, self.output)
+                self.assertIn(reason, self.output)
+                self.assertNotIn('fixture-token', self.output)
+                self.assertNotIn('private details', self.output)
+                self.assertNotIn('private response body', self.output)
+
     def test_old_queued_identity_and_external_destination_changes_cannot_advance(self) -> None:
         receipt = self.directory / 'receipt.json'
         self.run_cli('admit', '--output', str(receipt))
