@@ -14,11 +14,19 @@ on:
         type: boolean
         default: false
       mode:
-        description: Resume retained originals, or repeat full preparation before originals exist
+        description: Resume originals, prepare a candidate, or diagnose one history download
         type: choice
-        options: [resume, prepare]
+        options: [resume, prepare, diagnose-download]
         default: resume
         required: true
+      probe-asset-id:
+        description: Existing history asset ID for the read-only download probe
+        type: string
+        default: '719003297'
+      probe-sha256:
+        description: Independently retained SHA256 of the probe asset
+        type: string
+        default: '4e8a5da2735158ed830da72773c524e467f1c181987dfadbb0ec8bcd605d91e2'
 
 permissions: {}
 
@@ -35,6 +43,35 @@ env:
   REPOSITORY_ID: ${{ vars.TARN_RELEASE_REPOSITORY_ID }}
 
 jobs:
+  download-probe:
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.mode == 'diagnose-download' &&
+      !inputs.release-controls &&
+      vars.TARN_RELEASE_PREPARATION_ENABLED == 'false' &&
+      vars.TARN_RELEASE_HOSTED_PROOF == 'false'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write # Same private draft-read permission as the failing job. No writes in the probe.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12.12'
+      - uses: ./.github/actions/setup-gh
+      - name: Probe only the failing authenticated history download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREPARATION_ENABLED: ${{ vars.TARN_RELEASE_PREPARATION_ENABLED }}
+          HOSTED_PROOF: ${{ vars.TARN_RELEASE_HOSTED_PROOF }}
+          PROBE_ASSET_ID: ${{ inputs.probe-asset-id }}
+          PROBE_SHA256: ${{ inputs.probe-sha256 }}
+          PROBE_ERROR_PUBLIC_KEY: ${{ vars.TARN_PROBE_ERROR_PUBLIC_KEY }}
+        run: python -I scripts/release/probe_download.py
+
   release-controls:
     if: github.event_name == 'workflow_dispatch' && inputs.release-controls
     permissions:
@@ -43,7 +80,7 @@ jobs:
 
   resolve:
     if: >-
-      !inputs.release-controls &&
+      !inputs.release-controls && inputs.mode != 'diagnose-download' &&
       vars.TARN_RELEASE_PREPARATION_ENABLED == 'true' &&
       startsWith(github.ref, 'refs/tags/v') &&
       (github.event_name != 'create' || github.event.ref_type == 'tag')
