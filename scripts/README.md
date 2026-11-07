@@ -521,7 +521,9 @@ Controlled hosted probes verified actual job-token access and denial of anonymou
 The hosted preparation also retained and read back the original archives and evidence with its actual job token.
 These results do not establish registry publication or production readiness.
 Failed CLI requests stop the operation and report a recognised HTTP status when available.
-Rate-limit messages receive an explicit classification. Other errors remain unclassified.
+Recognised CLI messages receive fixed labels for rate limits, timeouts, DNS failures, TLS failures, connection resets, unexpected EOF and HTTP/2 stream errors.
+These labels describe the captured message. They do not establish the underlying cause.
+Other errors remain unclassified.
 Captured response bodies and raw CLI error text stay out of diagnostics.
 These local diagnostics do not establish the cause of earlier hosted download failures or authorise a write retry.
 The transport follows the [release API](https://docs.github.com/en/rest/releases/releases),

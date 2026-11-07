@@ -267,13 +267,42 @@ class CoordinatorChecks(unittest.TestCase):
             (b'gh: API rate limit exceeded (HTTP 403)', 'HTTP 403', 'rate limited'),
             (b'gh: Bad Gateway (HTTP 502)', 'HTTP 502', 'unclassified CLI error'),
             (b'gh: connection failed', 'HTTP status unavailable', 'unclassified CLI error'),
+            (
+                b'net/http: TLS handshake timeout',
+                'HTTP status unavailable',
+                'TLS handshake timeout',
+            ),
+            (b'context deadline exceeded', 'HTTP status unavailable', 'request timeout'),
+            (b'read tcp: i/o timeout', 'HTTP status unavailable', 'request timeout'),
+            (
+                b'dial tcp: lookup example.invalid: no such host',
+                'HTTP status unavailable',
+                'DNS failure',
+            ),
+            (
+                b'x509: certificate signed by unknown authority',
+                'HTTP status unavailable',
+                'TLS failure',
+            ),
+            (b'read tcp: connection reset by peer', 'HTTP status unavailable', 'connection reset'),
+            (b'unexpected EOF', 'HTTP status unavailable', 'unexpected EOF'),
+            (
+                b'http2: stream error: INTERNAL_ERROR',
+                'HTTP status unavailable',
+                'HTTP/2 stream error',
+            ),
         ):
+
             def process(
-                argv: list[str], failure: bytes = stderr, **kwargs: object,
+                argv: list[str],
+                failure: bytes = stderr,
+                **kwargs: object,
             ) -> subprocess.CompletedProcess[bytes]:
                 if argv[0] == 'gh':
                     raise subprocess.CalledProcessError(
-                        1, argv, output=b'private response body',
+                        1,
+                        argv,
+                        output=b'private response body',
                         stderr=failure + b'\nfixture-token private details',
                     )
                 return original(argv, **kwargs)

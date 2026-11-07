@@ -189,8 +189,21 @@ class GitHubAPI:
             )
             status = re.search(r'\bHTTP ([1-5][0-9]{2})\b', diagnostic)
             http = f'HTTP {status[1]}' if status else 'HTTP status unavailable'
-            reason = (
-                'rate limited' if 'rate limit' in diagnostic.lower() else 'unclassified CLI error'
+            categories = (
+                ('rate limit', 'rate limited'),
+                ('tls handshake timeout', 'TLS handshake timeout'),
+                ('context deadline exceeded', 'request timeout'),
+                ('i/o timeout', 'request timeout'),
+                ('client.timeout exceeded', 'request timeout'),
+                ('no such host', 'DNS failure'),
+                ('x509:', 'TLS failure'),
+                ('connection reset by peer', 'connection reset'),
+                ('unexpected eof', 'unexpected EOF'),
+                ('http2: stream error', 'HTTP/2 stream error'),
+            )
+            reason = next(
+                (label for pattern, label in categories if pattern in diagnostic.lower()),
+                'unclassified CLI error',
             )
             message = (
                 f'GitHub API request failed: {endpoint}; exit {error.returncode}; {http}; {reason}'
