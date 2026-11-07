@@ -520,7 +520,12 @@ The signature-verifier response fixture exercises candidate policy, not hosted c
 Controlled hosted probes verified actual job-token access and denial of anonymous reads and package-job writes.
 The hosted preparation also retained and read back the original archives and evidence with its actual job token.
 These results do not establish registry publication or production readiness.
-Failed CLI requests stop the operation and report a recognised HTTP status when available.
+Asset downloads retain HTTP status before the CLI parses an error body.
+An empty or malformed JSON error body cannot hide that status.
+The transport repeats an asset GET at most twice for HTTP 500, 502, 503 or 504, with one-second then two-second waits.
+Each retry logs its HTTP status, attempt, wait and asset endpoint. A later success logs the recovery.
+Other failures stop immediately. The transport never repeats a write request.
+Storage still verifies original identities and bytes after successful reads.
 Recognised CLI messages receive fixed labels for rate limits, timeouts, DNS failures, TLS failures, connection resets, unexpected EOF and HTTP/2 stream errors.
 These labels describe the captured message. They do not establish the underlying cause.
 Other errors remain unclassified.
@@ -529,6 +534,28 @@ These local diagnostics do not establish the cause of earlier hosted download fa
 The transport follows the [release API](https://docs.github.com/en/rest/releases/releases),
 [asset API](https://docs.github.com/en/rest/releases/assets) and
 [GitHub CLI API interface](https://cli.github.com/manual/gh_api).
+
+
+## Isolated history-download diagnosis
+
+For authorised storage debugging, use `diagnose-download` from the reviewed workflow ref.
+Keep both `TARN_RELEASE_PREPARATION_ENABLED` and `TARN_RELEASE_HOSTED_PROOF` set to `false`.
+This mode runs only the authenticated download probe. It skips builds, the Python matrix, browser checks, retention writes, approval and publication.
+
+Replace `REF`, `ASSET_ID` and `SHA256` with the reviewed ref, existing asset ID and independently retained digest:
+
+```bash
+gh workflow run release-preparation.yml --repo AxelVoitier/zensical-tarn --ref REF \
+  -f mode=diagnose-download -f probe-asset-id=ASSET_ID -f probe-sha256=SHA256
+```
+
+The default probe uses the actual storage transport and verifies every successful download.
+Add `-f probe-include-headers=true` to sample the original CLI request with selected HTTP headers.
+Both variants stop on their first unrecovered failure. No downloaded file is executed.
+
+Set `TARN_PROBE_ERROR_PUBLIC_KEY` to the maintainer's public GPG encryption key before dispatch.
+The probe encrypts exact CLI stderr to that key. Only ciphertext, HTTP metadata, sizes, hashes and timing enter its logs.
+Decrypt a failure locally to inspect its exact error. Do not print credentials, signed URLs or private response bodies.
 
 
 ## Tagged coordinator

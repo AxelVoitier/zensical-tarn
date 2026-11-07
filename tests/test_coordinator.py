@@ -31,6 +31,11 @@ from release.storage import Draft, Event, Release, Storage
 from test_storage import ReleaseService
 
 
+def download_output(argv: list[str], data: bytes) -> bytes:
+    """Model the CLI's optional response headers at the external boundary."""
+    return (b'HTTP/2.0 200 OK\r\n\r\n' if '--include' in argv else b'') + data
+
+
 class CoordinatorChecks(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = TemporaryDirectory()
@@ -166,7 +171,12 @@ class CoordinatorChecks(unittest.TestCase):
         elif endpoint.startswith('/releases/assets/'):
             identifier = int(endpoint.rsplit('/', 1)[1])
             if 'Accept: application/octet-stream' in argv:
-                return subprocess.CompletedProcess(argv, 0, self.service.download(identifier), b'')
+                return subprocess.CompletedProcess(
+                    argv,
+                    0,
+                    download_output(argv, self.service.download(identifier)),
+                    b'',
+                )
             result = asdict(self.service.asset(identifier))
         elif endpoint.startswith('/releases/') and '/assets?name=' in endpoint:
             owner = int(endpoint.split('/')[2])
@@ -314,6 +324,93 @@ class CoordinatorChecks(unittest.TestCase):
                 self.assertNotIn('fixture-token', self.output)
                 self.assertNotIn('private details', self.output)
                 self.assertNotIn('private response body', self.output)
+
+    def test_history_error_keeps_http_status_when_cli_cannot_parse_json_error_body(self) -> None:
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        original = self.process
+
+        def process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if argv[0] == 'gh' and 'Accept: application/octet-stream' in argv:
+                raise subprocess.CalledProcessError(
+                    1,
+                    argv,
+                    output=(
+                        b'HTTP/2.0 500 Internal Server Error\n'
+                        b'Content-Type: application/json\r\n\r\n'
+                    ),
+                    stderr=b'unexpected end of JSON input\n',
+                )
+            return original(argv, **kwargs)
+
+        with patch.object(self, 'process', side_effect=process):
+            self.run_cli('guard', '--receipt', str(receipt), expected=1)
+        self.assertIn('HTTP 500', self.output)
+        self.assertNotIn('Content-Type', self.output)
+        self.assertNotIn('unexpected end', self.output)
+
+    def test_history_read_recovers_from_transient_server_errors_without_writes(self) -> None:
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        originals = dict(self.service.assets)
+        original = self.process
+        failures = iter([503, 503])
+
+        def process(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+            if (
+                argv[0] == 'gh'
+                and 'Accept: application/octet-stream' in argv
+                and next(failures, None) is not None
+            ):
+                raise subprocess.CalledProcessError(
+                    1,
+                    argv,
+                    output=(
+                        b'HTTP/2.0 503 Service Unavailable\nContent-Type: application/json\r\n\r\n'
+                    ),
+                    stderr=b'unexpected end of JSON input\n',
+                )
+            return original(argv, **kwargs)
+
+        with (
+            patch.object(self, 'process', side_effect=process),
+            patch('time.sleep', return_value=None),
+        ):
+            self.run_cli('guard', '--receipt', str(receipt))
+        self.assertEqual(self.service.assets, originals)
+        self.assertIn('HTTP 503', self.output)
+        self.assertIn('retry 1/2 in 1s', self.output)
+        self.assertIn('recovered on attempt 3/3', self.output)
+
+    def test_history_read_errors_are_bounded_and_denials_are_not_retried(self) -> None:
+        receipt = self.directory / 'receipt.json'
+        self.run_cli('admit', '--output', str(receipt))
+        original = self.process
+        for status, expected_reads in ((503, 3), (403, 1), (404, 1)):
+            reads: list[list[str]] = []
+
+            def process(
+                argv: list[str], observed: list[list[str]] = reads,
+                limit: int = expected_reads, code: int = status, **kwargs: object,
+            ) -> subprocess.CompletedProcess[bytes]:
+                if argv[0] == 'gh' and 'Accept: application/octet-stream' in argv:
+                    observed.append(argv)
+                    if len(observed) > limit:
+                        self.fail('History request exceeded its allowed read attempts')
+                    raise subprocess.CalledProcessError(
+                        1, argv,
+                        output=(f'HTTP/2.0 {code} Error\n'
+                                'Content-Type: application/json\r\n\r\n').encode(),
+                        stderr=b'unexpected end of JSON input\n',
+                    )
+                return original(argv, **kwargs)
+
+            with (self.subTest(status=status),
+                  patch.object(self, 'process', side_effect=process),
+                  patch('time.sleep', return_value=None)):
+                self.run_cli('guard', '--receipt', str(receipt), expected=1)
+                self.assertIn(f'HTTP {status}', self.output)
+                self.assertEqual(len(reads), expected_reads)
 
     def test_old_queued_identity_and_external_destination_changes_cannot_advance(self) -> None:
         receipt = self.directory / 'receipt.json'

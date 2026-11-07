@@ -179,6 +179,8 @@ class StorageChecks(unittest.TestCase):
                 result = b'{}'
             else:
                 self.fail(f'Unexpected external request: {endpoint}')
+            if '--include' in argv:
+                result = b'HTTP/2.0 200 OK\r\n\r\n' + result
             return subprocess.CompletedProcess(argv, 0, result, b'')
 
         with (
@@ -196,6 +198,17 @@ class StorageChecks(unittest.TestCase):
         self.assertTrue(calls)
         with patch.dict(os.environ, {}, clear=True), self.assertRaises(ValueError):
             GitHubAPI().download(101)
+
+    def test_transport_never_retries_an_uncertain_asset_upload(self) -> None:
+        failure = subprocess.CalledProcessError(
+            1, ['gh', 'api'], output=b'HTTP/2.0 503 Service Unavailable\n\n',
+            stderr=b'unexpected end of JSON input\n',
+        )
+        with (patch.dict(os.environ, {'GH_TOKEN': 'fixture-token'}, clear=True),
+              patch('subprocess.run', side_effect=failure) as process,
+              self.assertRaises(subprocess.CalledProcessError)):
+            GitHubAPI().upload(20, 'original.tar.gz', b'abc')
+        self.assertEqual(process.call_count, 1)
 
     def test_cancelled_and_unaccepted_writes_preserve_recoverable_history(self) -> None:
         for outcome in ('cancelled', 'before-write'):

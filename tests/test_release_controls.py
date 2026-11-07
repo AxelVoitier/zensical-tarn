@@ -120,6 +120,8 @@ class GitHubCommands:
         elif endpoint == PREFIX + '/releases/assets/30':
             self.retrieved_history_after_product_deletion = '21' in self.deleted
             content = b'changed history' if self.corrupt_history else PROOF_BODY.encode()
+            if '--include' in argv:
+                content = b'HTTP/2.0 200 OK\r\n\r\n' + content
             return subprocess.CompletedProcess(argv, 0, content, b'')
         elif endpoint == PREFIX:
             data = {'id': 123}

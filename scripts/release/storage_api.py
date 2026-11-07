@@ -4,6 +4,7 @@
 """Authenticated, ID-addressed GitHub release storage transport."""
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ import time
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from copy import deepcopy
+from http import HTTPStatus
 from typing import TypeVar, cast
 from urllib.parse import quote
 
@@ -21,6 +23,17 @@ from release.storage import Asset, Release
 T = TypeVar('T')
 CREATE_VISIBILITY_READS = 6
 CREATE_VISIBILITY_INTERVAL_SECONDS = 2
+DOWNLOAD_READ_RETRIES = 2
+logger = logging.getLogger(__name__)
+
+
+def split_response(raw: bytes) -> tuple[int, bytes]:
+    """Separate gh's included final HTTP headers without interpreting asset bytes."""
+    boundary = re.search(rb'\r?\n\r?\n', raw)
+    status = re.match(rb'HTTP/[0-9.]+ ([0-9]{3})(?:[ \r\n])', raw)
+    if boundary is None or status is None:
+        raise ValueError('Missing or malformed included HTTP response')
+    return int(status[1]), raw[boundary.end() :]
 
 
 def number(value: object) -> int:
@@ -152,6 +165,8 @@ class GitHubAPI:
             '-H',
             'X-GitHub-Api-Version: 2026-03-10',
         ]
+        if binary:
+            argv.append('--include')
         if data is not None:
             self._verify_reads()
             if self._reads is not None:
@@ -173,43 +188,88 @@ class GitHubAPI:
                     f'Content-Length: {len(data)}',
                 ],
             )
-        try:
-            return subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.
-                argv,
-                input=data,
-                capture_output=True,
-                check=True,
-                timeout=120,
-            ).stdout
-        except subprocess.CalledProcessError as error:
-            # Report only recognised facts, never captured bodies or raw stderr.
-            captured = error.stderr or b''
-            diagnostic = (
-                captured.decode(errors='replace') if isinstance(captured, bytes) else str(captured)
-            )
-            status = re.search(r'\bHTTP ([1-5][0-9]{2})\b', diagnostic)
-            http = f'HTTP {status[1]}' if status else 'HTTP status unavailable'
-            categories = (
-                ('rate limit', 'rate limited'),
-                ('tls handshake timeout', 'TLS handshake timeout'),
-                ('context deadline exceeded', 'request timeout'),
-                ('i/o timeout', 'request timeout'),
-                ('client.timeout exceeded', 'request timeout'),
-                ('no such host', 'DNS failure'),
-                ('x509:', 'TLS failure'),
-                ('connection reset by peer', 'connection reset'),
-                ('unexpected eof', 'unexpected EOF'),
-                ('http2: stream error', 'HTTP/2 stream error'),
-            )
-            reason = next(
-                (label for pattern, label in categories if pattern in diagnostic.lower()),
-                'unclassified CLI error',
-            )
-            message = (
-                f'GitHub API request failed: {endpoint}; exit {error.returncode}; {http}; {reason}'
-            )
-            # Permission probes still inspect the original status and stderr.
-            raise APIRequestError(error, message) from None
+        read_retries = 0
+        while True:
+            try:
+                raw = subprocess.run(  # noqa: S603 - Fixed gh binary, hosts, endpoints; no shell.
+                    argv,
+                    input=data,
+                    capture_output=True,
+                    check=True,
+                    timeout=120,
+                ).stdout
+            except subprocess.CalledProcessError as error:
+                # Report only recognised facts, never captured bodies or raw stderr.
+                captured = error.stderr or b''
+                diagnostic = (
+                    captured.decode(errors='replace')
+                    if isinstance(captured, bytes)
+                    else str(captured)
+                )
+                included_status = (
+                    re.match(rb'HTTP/[0-9.]+ ([0-9]{3})(?:[ \r\n])', error.stdout or b'')
+                    if binary
+                    else None
+                )
+                status = re.search(r'\bHTTP ([0-9]{3})\b', diagnostic)
+                http = (
+                    f'HTTP {int(included_status[1])}'
+                    if included_status
+                    else f'HTTP {status[1]}'
+                    if status
+                    else 'HTTP status unavailable'
+                )
+                if (
+                    binary
+                    and data is None
+                    and included_status
+                    and int(included_status[1]) in {500, 502, 503, 504}
+                    and read_retries < DOWNLOAD_READ_RETRIES
+                ):
+                    read_retries += 1
+                    logger.warning(
+                        'Asset GET failed (HTTP %d); retry %d/%d in %ds: %s',
+                        int(included_status[1]), read_retries, DOWNLOAD_READ_RETRIES,
+                        read_retries, endpoint,
+                    )
+                    time.sleep(read_retries)
+                    continue
+                categories = (
+                    ('unexpected end of json input', 'malformed JSON error response'),
+                    ('rate limit', 'rate limited'),
+                    ('tls handshake timeout', 'TLS handshake timeout'),
+                    ('context deadline exceeded', 'request timeout'),
+                    ('i/o timeout', 'request timeout'),
+                    ('client.timeout exceeded', 'request timeout'),
+                    ('no such host', 'DNS failure'),
+                    ('x509:', 'TLS failure'),
+                    ('connection reset by peer', 'connection reset'),
+                    ('unexpected eof', 'unexpected EOF'),
+                    ('http2: stream error', 'HTTP/2 stream error'),
+                )
+                reason = next(
+                    (label for pattern, label in categories if pattern in diagnostic.lower()),
+                    'unclassified CLI error',
+                )
+                message = (
+                    f'GitHub API request failed: {endpoint}; '
+                    f'exit {error.returncode}; {http}; {reason}'
+                )
+                # Permission probes still inspect the original status and stderr.
+                raise APIRequestError(error, message) from None
+            else:
+                if binary:
+                    status_code, body = split_response(raw)
+                    if status_code != HTTPStatus.OK:
+                        raise ValueError('Unexpected asset download HTTP status')
+                else:
+                    body = raw
+                if read_retries:
+                    logger.warning(
+                        'Asset GET recovered on attempt %d/%d: %s',
+                        read_retries + 1, DOWNLOAD_READ_RETRIES + 1, endpoint,
+                    )
+                return body
 
     def create_product(
         self,
