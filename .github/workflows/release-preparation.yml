@@ -19,6 +19,10 @@ on:
         options: [resume, prepare, diagnose-download]
         default: resume
         required: true
+      probe-include-headers:
+        description: Capture HTTP status and safe headers around the failing CLI response parser
+        type: boolean
+        default: false
       probe-asset-id:
         description: Existing history asset ID for the read-only download probe
         type: string
@@ -67,6 +71,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PREPARATION_ENABLED: ${{ vars.TARN_RELEASE_PREPARATION_ENABLED }}
           HOSTED_PROOF: ${{ vars.TARN_RELEASE_HOSTED_PROOF }}
+          PROBE_INCLUDE_HEADERS: ${{ inputs.probe-include-headers }}
           PROBE_ASSET_ID: ${{ inputs.probe-asset-id }}
           PROBE_SHA256: ${{ inputs.probe-sha256 }}
           PROBE_ERROR_PUBLIC_KEY: ${{ vars.TARN_PROBE_ERROR_PUBLIC_KEY }}

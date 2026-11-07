@@ -14,6 +14,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from release.sdist import REPOSITORY
 from release.storage_api import APIRequestError, GitHubAPI
 
 
@@ -29,6 +30,38 @@ def encrypted(error: bytes | str | None) -> str:
             input=data, capture_output=True, check=True, timeout=10,
         )
         return result.stdout.decode()
+
+
+def included(identifier: str) -> bytes:
+    """Observe the status that gh can otherwise hide on malformed JSON errors."""
+    result = subprocess.run(  # noqa: S603 - Fixed GET and host, validated numeric asset ID.
+        ['gh', 'api', '--hostname', 'github.com',
+         f'repos/{REPOSITORY}/releases/assets/{identifier}',
+         '-H', 'Accept: application/octet-stream',
+         '-H', 'X-GitHub-Api-Version: 2026-03-10', '--include'],
+        check=False, capture_output=True, timeout=120,
+    )
+    separator = re.search(rb'\r?\n\r?\n', result.stdout)
+    headers = result.stdout[:separator.start()] if separator else b''
+    body = result.stdout[separator.end():] if separator else b''
+    safe: dict[str, str] = {}
+    for line in headers.decode(errors='replace').splitlines():
+        if status := re.fullmatch(r'HTTP/[0-9.]+ ([0-9]{3})(?: .*)?', line):
+            safe['status'] = status[1]
+        name, _, value = line.partition(':')
+        if name.lower() in {'content-type', 'content-length', 'x-ratelimit-remaining',
+                            'x-ratelimit-reset', 'x-ratelimit-used', 'x-github-request-id'}:
+            safe[name.lower()] = value.strip()
+    print(json.dumps({'http_response': safe}), flush=True)
+    if result.returncode:
+        error = subprocess.CalledProcessError(
+            result.returncode, result.args, output=result.stdout, stderr=result.stderr,
+        )
+        raise APIRequestError(error, 'Included-header download failed')
+    if not separator:
+        message = 'Probe response headers are unavailable'
+        raise ValueError(message)
+    return body
 
 
 def main() -> int:
@@ -60,10 +93,12 @@ def main() -> int:
         flush=True,
     )
     api = GitHubAPI()
-    for attempt in range(1, 21):
+    include_headers = os.environ.get('PROBE_INCLUDE_HEADERS') == 'true'
+    for attempt in range(1, 101 if include_headers else 21):
         started = time.monotonic()
         try:
-            data = api.download(int(identifier))
+            data = (included(identifier) if include_headers
+                    else api.download(int(identifier)))
         except APIRequestError as error:
             print(
                 json.dumps(
